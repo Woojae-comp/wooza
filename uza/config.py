@@ -77,8 +77,14 @@ class Config:
 
     @classmethod
     def load(cls, path: str | Path) -> "Config":
-        raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-        return cls.from_dict(raw)
+        path = Path(path)
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        c = cls.from_dict(raw)
+        # 상대 경로는 설정 파일 위치 기준으로 푼다. 어디서 실행해도 같은 파일을 쓴다.
+        base = path.resolve().parent
+        c.db_path = str(base / c.db_path)
+        c.uza_md_path = str(base / c.uza_md_path)
+        return c
 
     @classmethod
     def from_dict(cls, raw: dict) -> "Config":

@@ -20,13 +20,16 @@
 
 ```bash
 pip install -r requirements.txt
-export ANTHROPIC_API_KEY=...
-python -m uza            # 콘솔 대화 + 백그라운드 스케줄러
+cp ../other-project/.env .env   # 또는 .env.example을 복사해 ANTHROPIC_API_KEY 입력
+python -m uza                   # 콘솔 대화 + 백그라운드 스케줄러
+python -m uza --env ../other-project/.env   # 복사하지 않고 경로로 지정
 ```
+
+`.env`는 커밋되지 않는다 (`.gitignore`). 이미 설정된 환경 변수가 `.env`보다 우선한다.
 
 대화 중 `/tick`(선제 판단 즉시 실행), `/reflect`, `/review`, `/memory`, `/quit`.
 
-`UZA.md`를 저장소 루트에 두면 1~4, 10~12, 16장이 모든 프롬프트 앞에 붙는다. 없으면 용도별 지시만으로 동작한다.
+`UZA.md`의 1~4, 10~12, 16장이 모든 프롬프트 앞에 붙는다. 장 제목은 `## 숫자. 제목` 형식을 지켜야 한다.
 설정은 `config.yaml` (모델, effort, DB 경로 포함).
 
 ## 테스트

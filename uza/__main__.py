@@ -2,6 +2,9 @@
 
     python -m uza            # 대화 + 백그라운드 스케줄러
     python -m uza --no-scheduler
+    python -m uza --env ../other-project/.env   # 다른 프로젝트의 .env 사용
+
+API 키는 .env의 ANTHROPIC_API_KEY에서 읽는다. 이미 설정된 환경 변수가 우선한다.
 
 대화 중 명령: /tick (선제 판단 즉시 실행), /reflect, /review, /memory, /quit
 """
@@ -12,6 +15,8 @@ import argparse
 import logging
 import threading
 from datetime import datetime
+
+from dotenv import load_dotenv
 
 from .config import Config
 from .engine import Uza
@@ -33,11 +38,14 @@ class ConsoleMessenger:
 def main() -> None:
     parser = argparse.ArgumentParser(prog="uza")
     parser.add_argument("--config", default="config.yaml")
+    parser.add_argument("--env", default=".env", help="API 키를 읽을 .env 파일 경로")
     parser.add_argument("--no-scheduler", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
+    if not load_dotenv(args.env):
+        logging.warning("%s 를 찾지 못했다. 환경 변수에서 API 키를 찾는다.", args.env)
     cfg = Config.load(args.config)
     core = load_core(cfg.uza_md_path)
     if not core:

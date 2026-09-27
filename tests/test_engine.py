@@ -350,3 +350,17 @@ def test_claude_llm_request_and_refusal():
     client._response = SimpleNamespace(stop_reason="refusal", content=[])
     with pytest.raises(LLMError):
         llm.complete("proactive", {})
+
+
+def test_repo_uza_md_core_chapters():
+    core = load_core(ROOT / "UZA.md")
+    for title in ("1. 정체성", "4. 대화 원칙", "10. 메시지 유형", "12. 힘든 이야기와 안전", "16. 감시하는 인상 주지 않기"):
+        assert title in core
+    for title in ("5. 시간 규칙", "8. 기억 구조", "14. 하루 정리"):
+        assert title not in core
+
+
+def test_config_paths_resolve_from_config_file():
+    cfg = Config.load(ROOT / "config.yaml")
+    assert Path(cfg.uza_md_path) == ROOT / "UZA.md"
+    assert Path(cfg.db_path) == ROOT / "uza.db"
