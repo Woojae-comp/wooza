@@ -1,0 +1,38 @@
+# UZA 설정 (docs/IMPLEMENTATION.md 3장)
+active_hours:
+  start: "09:00"
+  end: "23:00"
+check_interval: "1h"
+timezone: "Asia/Seoul"
+
+limits:
+  max_proactive_per_day: 4          # 하루 최대 선제 메시지
+  min_gap_after_any_message: 90m    # 마지막 대화 후 최소 간격
+  min_gap_after_unanswered: 4h      # 선제 메시지 무응답 시 대기
+  max_consecutive_unanswered: 2     # 연속 무응답 N회면 당일 중단
+
+backoff:
+  # 최근 7일 선제 메시지 응답률에 따라 하루 최대치 조정
+  - response_rate_below: 0.2
+    max_proactive_per_day: 1
+  - response_rate_below: 0.5
+    max_proactive_per_day: 2
+
+reflection_time: "23:30"
+review_day: "sunday"
+
+context:
+  recent_messages: 20               # 프롬프트에 넣을 최근 메시지 수
+  max_episodes: 5
+  max_hypotheses: 8
+
+model:
+  name: "claude-opus-5"
+  effort:
+    proactive: "low"
+    chat: "medium"
+    reflection: "high"
+    review: "high"
+
+db_path: "uza.db"
+uza_md_path: "UZA.md"
