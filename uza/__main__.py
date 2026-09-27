@@ -12,6 +12,7 @@ API 키는 .env의 ANTHROPIC_API_KEY에서 읽는다. 이미 설정된 환경 �
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import threading
 from datetime import datetime
@@ -24,6 +25,14 @@ from .llm import ClaudeLLM
 from .prompts import load_core
 from .scheduler import Scheduler
 from .store import Store
+
+
+def _print_result(name: str, result: dict | None) -> None:
+    if result is None:
+        # 정리할 대화가 없거나 모델 호출이 실패하면 엔진은 None을 돌려준다.
+        print(f"[{name}] 결과 없음 (정리할 대화가 없거나 모델 호출 실패, -v로 로그 확인)")
+    else:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 class ConsoleMessenger:
@@ -71,9 +80,9 @@ def main() -> None:
                 o = uza.proactive_tick(now())
                 print(f"[{o.decision}] {o.reason}")
             elif line == "/reflect":
-                print(uza.reflect(now()))
+                _print_result("reflect", uza.reflect(now()))
             elif line == "/review":
-                print(uza.review(now()))
+                _print_result("review", uza.review(now()))
             elif line == "/memory":
                 print(uza.describe_memory(now()))
             else:
