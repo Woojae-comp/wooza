@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Protocol
 
 import anthropic
@@ -31,7 +32,10 @@ class ClaudeLLM:
         self.core = core
         self.model = model
         self.effort = effort or {}
-        self.client = client or anthropic.Anthropic()
+        # Claude Code 세션 안에서는 ANTHROPIC_BASE_URL이 세션 자체의 프록시를 가리킨다.
+        # UZA는 항상 Anthropic API로 직접 보낸다 (UZA_ANTHROPIC_BASE_URL로만 바꿀 수 있다).
+        base_url = os.environ.get("UZA_ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+        self.client = client or anthropic.Anthropic(base_url=base_url)
 
     def complete(self, purpose: str, context: dict) -> dict:
         _, schema = INSTRUCTIONS[purpose]
