@@ -35,7 +35,10 @@ class ClaudeLLM:
         # Claude Code 세션 안에서는 ANTHROPIC_BASE_URL이 세션 자체의 프록시를 가리킨다.
         # UZA는 항상 Anthropic API로 직접 보낸다 (UZA_ANTHROPIC_BASE_URL로만 바꿀 수 있다).
         base_url = os.environ.get("UZA_ANTHROPIC_BASE_URL", "https://api.anthropic.com")
-        self.client = client or anthropic.Anthropic(base_url=base_url)
+        # 클라우드 환경에서는 ANTHROPIC_API_KEY를 설정하면 Claude Code 자체 인증과 겹친다.
+        # 그래서 UZA_ANTHROPIC_API_KEY를 먼저 보고, 없으면 ANTHROPIC_API_KEY를 쓴다.
+        api_key = os.environ.get("UZA_ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+        self.client = client or anthropic.Anthropic(api_key=api_key, base_url=base_url)
 
     def complete(self, purpose: str, context: dict) -> dict:
         _, schema = INSTRUCTIONS[purpose]
