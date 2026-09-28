@@ -145,16 +145,18 @@ def otsu(p: np.ndarray, bins: int = 100) -> float:
     h, edges = np.histogram(p, bins=bins, range=(0, 1))
     mid = (edges[:-1] + edges[1:]) / 2
     w = h / h.sum()
-    best, t = -1, 0.5
+    scores = np.full(bins, -1.0)
     for k in range(1, bins):
         w0, w1 = w[:k].sum(), w[k:].sum()
         if w0 == 0 or w1 == 0:
             continue
         m0, m1 = (w[:k] * mid[:k]).sum() / w0, (w[k:] * mid[k:]).sum() / w1
-        between = w0 * w1 * (m0 - m1) ** 2
-        if between > best:
-            best, t = between, edges[k]
-    return float(t)
+        scores[k] = w0 * w1 * (m0 - m1) ** 2
+    if scores.max() < 0:
+        return 0.5
+    # 두 집단 사이가 비어 같은 값이 이어지면 그 구간의 가운데
+    best = np.flatnonzero(scores >= scores.max() - 1e-12)
+    return float(edges[best].mean())
 
 
 def train_ws(X, p: np.ndarray, confident: float = 0.2, seed: int = 0, C: float = 1.0):
