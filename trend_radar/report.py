@@ -59,7 +59,7 @@ def _slim(result: dict, top_profiles: int = 700) -> dict:
         p = dict(prof[k])
         if p.get("structure"):
             st = {x: p["structure"].get(x) for x in ("early_df", "recent_df", "assoc_overlap", "profile_similarity",
-                                                     "early_assoc", "recent_assoc", "converging_links", "early_cluster",
+                                                     "early_assoc", "recent_assoc", "converging_links", "early_cluster", "early_context", "recent_context",
                                                      "recent_cluster", "cluster_moved", "early_degree", "recent_degree")}
             st["converging_links"] = (st["converging_links"] or [])[:6]
             p["structure"] = st

@@ -210,7 +210,7 @@ function clusterCard(c, chg) {
   let change = "";
   if (chg) {
     change = chg.status === "new" ? `<div class="tags"><span class="tag Emerging">새 군집</span></div>` :
-      `<div class="note">이전 군집과 유사도 ${fx(chg.similarity, 2)} · 추가: ${esc((chg.added || []).slice(0, 6).join(", ")) || "–"} · 빠짐: ${esc((chg.removed || []).slice(0, 6).join(", ")) || "–"}</div>`;
+      `<div class="note">${chg.similarity != null ? `이전 군집과 유사도 ${fx(chg.similarity, 2)} · ` : ""}추가: ${esc((chg.added || []).slice(0, 6).join(", ")) || "–"} · 빠짐: ${esc((chg.removed || []).slice(0, 6).join(", ")) || "–"}</div>`;
   }
   const arts = (c.arts || []).map(artHtml).join("");
   return `<div class="card cluster"><div class="top" style="display:flex;justify-content:space-between;gap:8px"><b>[${esc(c.name_candidate)}]</b><span class="muted" style="white-space:nowrap">키워드 ${c.size} · 기사 ${(c.articles ?? 0).toLocaleString()}</span></div>
@@ -293,8 +293,12 @@ render.emerging = () => {
     <div class="note" style="margin-bottom:8px">${note}</div>${kwGrid(list, "g-em", emTab === "declining" ? "articles" : "ratio")}`;
 };
 
+let structSort = "df";
 render.struct = () => {
-  const cards = D.structural.filter(k => P[k] && P[k].structure).map(k => {
+  const key = {df: k => -P[k].structure.recent_df, overlap: k => P[k].structure.assoc_overlap,
+    ctx: k => -Math.min(P[k].structure.early_context || 0, P[k].structure.recent_context || 0)}[structSort];
+  const list = D.structural.filter(k => P[k] && P[k].structure).sort((a, b) => key(a) - key(b));
+  const cards = list.map(k => {
     const s = P[k].structure;
     const ea = s.early_assoc.slice(0, 10).map(([w]) => `<span class="pill ${s.recent_assoc.some(x => x[0] === w) ? "" : "lost"}">${esc(w)}</span>`).join("");
     const ra = s.recent_assoc.slice(0, 10).map(([w]) => `<span class="pill ${s.early_assoc.some(x => x[0] === w) ? "" : "new"}">${esc(w)}</span>`).join("");
@@ -302,7 +306,9 @@ render.struct = () => {
       <div class="two" style="margin-top:8px"><div><div class="muted" style="font-size:12px">이전 (${M.first12.join("~")})</div>${ea}</div><div><div class="muted" style="font-size:12px">최근 (${M.recent12.join("~")})</div>${ra}</div></div>
       ${s.cluster_moved ? `<div class="note">군집 이동: [${esc(s.early_cluster)}] → [${esc(s.recent_cluster)}]</div>` : ""}</div>`;
   }).join("");
-  return `<div class="intro">키워드 빈도가 크게 변하지 않아도 <b>주변에 연결되는 키워드가 달라진 경우</b>(Context Shift)입니다. 두 구간 모두 50건 이상, 연관어 TOP20 겹침(Jaccard) 0.35 이하, 두 구간 모두 연관 맥락이 뚜렷한(상위 연관어 평균 코사인 0.08 이상) 키워드입니다. 초록은 새 연관어, 취소선은 사라진 연관어입니다.</div><div class="grid">${cards || '<div class="muted">해당 없음</div>'}</div>`;
+  return `<div class="intro">키워드 빈도가 크게 변하지 않아도 <b>주변에 연결되는 키워드가 달라진 경우</b>(Context Shift)입니다. 두 구간 모두 50건 이상, 연관어 TOP20 겹침(Jaccard) 0.35 이하, 두 구간 모두 연관 맥락이 뚜렷한(상위 연관어 평균 코사인 0.08 이상) 키워드입니다. 초록은 새 연관어, 취소선은 사라진 연관어입니다. 주가·시장 같은 허브 단어는 뉴스 구성 변화(예: 시세 기사 비중)에 따라 연관어가 바뀌므로 기사와 함께 해석하세요.</div>
+    <div class="toolbar"><span class="muted">정렬</span><div class="seg" id="stSeg">${[["df", "기사 수"], ["overlap", "연관어 겹침 낮은 순"], ["ctx", "맥락 선명도"]].map(([k, v]) => `<button data-s="${k}" class="${k === structSort ? "on" : ""}">${v}</button>`).join("")}</div><span class="note">${list.length}개 (전체 목록은 tables/structural_change.csv)</span></div>
+    <div class="grid">${cards || '<div class="muted">해당 없음</div>'}</div>`;
 };
 
 render.time = () => {
@@ -438,6 +444,7 @@ document.addEventListener("click", e => {
   const em = e.target.closest("[data-e]"); if (em) { emTab = em.dataset.e; return show("emerging"); }
   const r = e.target.closest("[data-r]"); if (r) { revTab = r.dataset.r; return show("review"); }
   const f = e.target.closest("[data-f]"); if (f) { revFilter = f.dataset.f; return show("review"); }
+  const ss = e.target.closest("[data-s]"); if (ss) { structSort = ss.dataset.s; return show("struct"); }
 });
 document.addEventListener("change", e => {
   if (e.target.id === "secSel") { curSector = e.target.value; show("sector"); }

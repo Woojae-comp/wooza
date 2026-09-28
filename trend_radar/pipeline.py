@@ -409,7 +409,7 @@ def assemble(cfg, corpus, arts, win, dt, st, stx, profiles, dif, sectors, net_al
                        "recent_share"),
         "established": pick(st["Established"], "mean_share", 30),
     }
-    cross = pick(sig3 & ~st["company_specific"] & st["keyword"].map(lambda w: w in profiles and sum(
+    cross = pick(sig3 & ~st["company_specific"] & (st["ratio"] >= 1.0) & st["keyword"].map(lambda w: w in profiles and sum(
         a in ("↑", "↑↑") for a in profiles[w]["diffusion"]["arrows"].values()) >= 2), "sectors_recent", 40)
     emerging = pick(st["Emerging"], "ratio", 40)
     growing = pick(st["Growing"], "ratio", 40)
@@ -417,8 +417,9 @@ def assemble(cfg, corpus, arts, win, dt, st, stx, profiles, dif, sectors, net_al
     event = pick(st["Event-driven"], "peak_multiple", 30)
     spreading = pick(st["Spreading"], "sectors_recent", 30)
     converging = pick(st["Converging"], "ratio", 30)
-    s_idx = stru[stru["structural_change"]].sort_values("profile_similarity")
-    structural = [w for w in s_idx.index if w in prof][:40]
+    # 기사가 많은(산업적으로 중요한) 키워드부터. 겹침 순으로 두면 맥락이 흐린 일반어가 앞에 온다
+    s_idx = stru[stru["structural_change"]].sort_values("recent_df", ascending=False)
+    structural = [w for w in s_idx.index if w in prof][:100]
 
     def conv_table(sc):
         S = len(sc["sectors"])
