@@ -37,6 +37,7 @@ BRIDGE = "generic_bridge"
 EXTERNAL = {"proper_noun_noncontent", "noncontent_company"}
 ENTITY_ANY = {"proper_noun_content", "proper_noun_noncontent", "content_company", "noncontent_company",
               "noncontent_company_specific", "work_person_policy"}
+CONTENT_TYPES = {"concept", "content_company", "work_person_policy", "proper_noun_content", "noncontent_company_specific", BRIDGE}
 REASONS = ["GENERIC_WORD_DOMINANT", "MARKET_ARTICLE_DOMINANT", "EXTERNAL_ENTITY_LIST", "LOW_CONTENT_RELEVANCE",
            "LOW_COHERENCE", "NOISE_PROBE_ABSORPTION"]
 
@@ -91,6 +92,7 @@ def noise_components(r: np.ndarray, w: np.ndarray, Xd: sparse.csr_matrix, types_
         return float(mass[np.isin(types_d, list(types))].sum() / tm)
     return {"generic_share": share({"general_low_specificity"}), "market_phrase_share": share({"market_expression"}),
             "external_entity_share": share(EXTERNAL), "content_concept_share": share({"concept"}),
+            "content_share": share(CONTENT_TYPES),              # 콘텐츠 개념어 + 콘텐츠 기업·작품·인물 + 연결어
             "bridge_share": share({BRIDGE}),
             "market_article_share": float((ww * market_anchor[r]).sum() / tot_w),
             "content_anchor_share": float((ww * content_anchor[r]).sum() / tot_w),
@@ -99,18 +101,18 @@ def noise_components(r: np.ndarray, w: np.ndarray, Xd: sparse.csr_matrix, types_
 
 def noise_score(c: dict) -> float:
     return (c["generic_share"] + c["market_article_share"] + max(c["external_entity_share"], c["entity_list_share"])
-            + c["market_phrase_share"] - c["content_concept_share"] - c["content_anchor_share"])
+            + c["market_phrase_share"] - c["content_share"] - c["content_anchor_share"])
 
 
 def noise_reasons(c: dict, relevance: float, coherence: float, absorption: float, rules: dict, rel_thr: float,
                   coh_cut: float) -> list[str]:
     out = []
-    if c["generic_share"] >= c["content_concept_share"]:
+    if c["generic_share"] >= c["content_share"]:
         out.append("GENERIC_WORD_DOMINANT")
     if c["market_article_share"] >= rules.get("market_article_dominant", 0.5):
         out.append("MARKET_ARTICLE_DOMINANT")
     if c["entity_list_share"] >= rules.get("entity_list_dominant", 0.5) or \
-            c["external_entity_share"] >= max(c["content_concept_share"], 1e-9) * rules.get("external_vs_concept", 0.5):
+            c["external_entity_share"] >= max(c["content_share"], 1e-9) * rules.get("external_vs_concept", 0.5):
         out.append("EXTERNAL_ENTITY_LIST")
     if relevance < rel_thr:
         out.append("LOW_CONTENT_RELEVANCE")
@@ -150,8 +152,11 @@ def subtopic_gate(ari: float, sizes: np.ndarray, coh_gain: float, rules: dict) -
 
 # ---------------------------------------------------------------- 층화 복구
 
-def rescue_flags(max_sim: np.ndarray, docs: np.ndarray, coherence: np.ndarray, rules: dict, coh_cut: float) -> np.ndarray:
-    return (max_sim < rules.get("rescue_max_cosine", 0.35)) & (docs >= rules.get("rescue_min_docs", 30)) & (coherence >= coh_cut)
+def rescue_flags(max_sim: np.ndarray, docs: np.ndarray, coherence: np.ndarray, rules: dict, coh_cut: float,
+                 noise: np.ndarray | None = None) -> np.ndarray:
+    """K=120 주제와 유사도 낮음 ∩ 최소 규모 ∩ 일관성 ∩ 잡음 아님 (잡음 점수·사유는 기본 주제와 같은 규칙)."""
+    ok = (max_sim < rules.get("rescue_max_cosine", 0.35)) & (docs >= rules.get("rescue_min_docs", 30)) & (coherence >= coh_cut)
+    return ok & ~noise if noise is not None else ok
 
 
 # ---------------------------------------------------------------- 실행
@@ -357,7 +362,7 @@ def run_e42(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
         vpos = {t: i for i, t in enumerate(vocab)}
         pcols = [vpos[p] for p in rules.get("noise_probes", []) if p in vpos]
         probe = np.unique(X[:, pcols].nonzero()[0]) if pcols else np.array([], int)
-        ev_rows, absorbed = [], collections.Counter()
+        ev_rows, absorbed, ev_assign = [], collections.Counter(), {}
         for name, r in {"exclude": exc, "review_low": rv_low, "probe": probe}.items():
             if not len(r):
                 continue
@@ -375,6 +380,7 @@ def run_e42(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
                             "absorbed_q10": round(float((ce10 == "HIGH").mean()), 4),
                             "unassigned_noise": round(float((ce == "REJECTED").mean()), 4),
                             "low_confidence": round(float((ce == "LOW").mean()), 4)})
+            ev_assign[name] = (e1, ce)
             if name in ("exclude", "probe"):
                 absorbed.update(e1[ce == "HIGH"].tolist())
         ev = pd.DataFrame(ev_rows)
@@ -472,6 +478,12 @@ def run_e42(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
                 "last_month": str(pd.Timestamp(arts["date"].to_numpy()[iu][r].max()).to_period("M")),
                 "sector_rescue_flag": 0, "run_id": run.run_id})
         treg = pd.DataFrame(reg)
+        noisy = set(treg.loc[treg["topic_type"] == "NOISE_CANDIDATE", "cluster"])
+        for i, row in ev.iterrows():
+            e1, ce = ev_assign[row["group"]]
+            ev.at[i, "absorbed_into_clean_topics"] = round(float(((ce == "HIGH") & ~np.isin(e1, list(noisy))).mean()), 4)
+            ev.at[i, "absorbed_into_noise_topics"] = round(float(((ce == "HIGH") & np.isin(e1, list(noisy))).mean()), 4)
+        ev.to_csv(run.dir / "07c_noise_eval.csv", index=False, encoding="utf-8-sig")
         st["rows_out"] = len(treg)
 
     # ------------------------------------------------ 하위 주제 (규칙 변경)
@@ -568,13 +580,19 @@ def run_e42(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
                 m = np.asarray(Xk[rr].T @ w[rr]).ravel()
                 tt = np.argsort(-m)[:10]
                 ch = npmi_coherence(list(tt[m[tt] > 0]), Bk, w) if (m[tt] > 0).sum() >= 2 else 0.0
+                comp_c = noise_components(rr, w, Xd, types_d, am[iu], acn[iu], list_flag)
+                rel_c = float(np.average(prel[iu][rr], weights=w[rr]))
+                rs_c = noise_reasons(comp_c, rel_c, ch, 0.0, rules, rel_thr, coh_cut)
+                sc_c = noise_score(comp_c)
                 c_rows.append({"sector": s, "cluster_id": f"{s}_{c:03d}", "articles": len(rr), "weighted": round(float(w[rr].sum()), 1),
+                               "noise_score": round(sc_c, 4), "noise_reason_codes": ";".join(rs_c),
+                               "is_noise": is_noise(sc_c, rs_c, rules), "topic_relevance_score": round(rel_c, 3),
                                "top_keywords": ", ".join(vocab[ext_nodes[i]] for i in tt), "coherence": round(ch, 4),
                                "nearest_topic": f"tp_{int(sims.argmax()):03d}", "nearest_topic_cosine": round(float(sims.max()), 4),
                                "_rows": rr})
         cdf = pd.DataFrame(c_rows)
         cdf["sector_rescue_topic"] = rescue_flags(cdf["nearest_topic_cosine"].to_numpy(), cdf["articles"].to_numpy(),
-                                                  cdf["coherence"].to_numpy(), rules, med_coh).astype(int)
+                                                  cdf["coherence"].to_numpy(), rules, med_coh, cdf["is_noise"].to_numpy(bool)).astype(int)
         resc = []
         for _, rrow in cdf[cdf["sector_rescue_topic"] == 1].iterrows():
             rid = f"tr_{rrow['cluster_id']}"

@@ -41,7 +41,7 @@ def test_top2_similarity_normalizes_centers():
 
 
 def _comp(**kw):
-    base = dict(generic_share=0.1, market_phrase_share=0.0, external_entity_share=0.0, content_concept_share=0.6,
+    base = dict(generic_share=0.1, market_phrase_share=0.0, external_entity_share=0.0, content_concept_share=0.6, content_share=0.7,
                 bridge_share=0.05, market_article_share=0.1, content_anchor_share=0.2, entity_list_share=0.0)
     base.update(kw)
     return base
@@ -49,7 +49,7 @@ def _comp(**kw):
 
 def test_noise_score_and_reasons_theme_stock_list():
     # 테마주 나열: 외부 기업·종목명 많고, 시장 앵커 기사 많고, 콘텐츠 개념어 적고, 나열 기사 반복
-    c = _comp(external_entity_share=0.45, content_concept_share=0.2, market_article_share=0.6, entity_list_share=0.8,
+    c = _comp(external_entity_share=0.45, content_concept_share=0.2, content_share=0.3, market_article_share=0.6, entity_list_share=0.8,
               content_anchor_share=0.0)
     s = noise_score(c)
     r = noise_reasons(c, 0.7, 0.3, 0.0, RULES, 0.49, 0.05)
@@ -58,7 +58,7 @@ def test_noise_score_and_reasons_theme_stock_list():
 
 
 def test_content_topic_not_noise_even_with_generic_words():
-    c = _comp(generic_share=0.25, content_concept_share=0.55, content_anchor_share=0.3)
+    c = _comp(generic_share=0.25, content_concept_share=0.55, content_share=0.6, content_anchor_share=0.3)
     s = noise_score(c)
     r = noise_reasons(c, 0.8, 0.3, 0.0, RULES, 0.49, 0.05)
     assert s < 0 and r == [] and not is_noise(s, r, RULES)
@@ -94,5 +94,15 @@ def test_subtopic_gate_rules():
 
 
 def test_rescue_requires_low_similarity_size_and_coherence():
-    f = rescue_flags(np.array([0.2, 0.6, 0.2, 0.2]), np.array([50, 50, 10, 50]), np.array([0.3, 0.3, 0.3, 0.05]), RULES, 0.1)
-    assert list(f) == [True, False, False, False]
+    f = rescue_flags(np.array([0.2, 0.6, 0.2, 0.2, 0.2]), np.array([50, 50, 10, 50, 50]), np.array([0.3, 0.3, 0.3, 0.05, 0.3]), RULES, 0.1,
+                     np.array([False, False, False, False, True]))
+    assert list(f) == [True, False, False, False, False]      # 마지막: 조건은 맞지만 잡음 → 복구 안 함
+
+
+def test_content_entities_count_as_content():
+    # 웹툰 기업·작품 중심 주제: 개념어는 적어도 콘텐츠 기업·작품이 콘텐츠 비중에 들어가 일반어 우세가 아님
+    Xd = sparse.csr_matrix(np.array([[1, 1, 1, 0], [1, 1, 0, 1]], float))
+    types = np.array(["content_company", "work_person_policy", "general_low_specificity", "concept"])
+    c = noise_components(np.array([0, 1]), np.ones(2), Xd, types, np.zeros(2), np.zeros(2), np.zeros(2))
+    assert np.isclose(c["content_share"], 5 / 6) and np.isclose(c["content_concept_share"], 1 / 6)
+    assert "GENERIC_WORD_DOMINANT" not in noise_reasons(c, 0.8, 0.3, 0.0, RULES, 0.49, 0.05)
