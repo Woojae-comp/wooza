@@ -26,7 +26,8 @@ import pandas as pd
 from scipy import sparse
 from scipy.stats import spearmanr
 
-from .text import HANGUL, JOINERS, merged_spans
+from .entities import protected_entities
+from .text import HANGUL, JOINERS, _space_free, merged_spans
 
 NOUN_TAGS = {"NNG", "NNP", "SL"}
 Z_SIG = 1.96
@@ -59,9 +60,12 @@ def e3_input(rel: pd.DataFrame, e2_run_id: str, threshold: float) -> pd.DataFram
 
 # ---------------------------------------------------------------- 후보어 (1~3그램 명사구)
 
-def candidates(tokens, texts, lexicon, attach: set[str], max_n: int = 3) -> list[list[str]]:
+def candidates(tokens, texts, lexicon, attach: set[str], max_n: int = 3,
+               restore: dict[str, str] | None = None) -> list[list[str]]:
     """붙어 있거나 공백 하나로 이어진 명사 형태소 연쇄에서 1~3그램. 동의어는 형태소 단위로 통일한다.
-    불용어는 여기서 빼지 않는다 (사전 등급에서 판단, 승인된 불용어는 표시만)."""
+    불용어는 여기서 빼지 않는다 (사전 등급에서 판단, 승인된 불용어는 표시만).
+    restore: 보호 토큰 → 원래 표기 ('P의거짓' → 'P의 거짓')."""
+    restore = restore or {}
     out = []
     for toks, text in zip(tokens, texts):
         spans = merged_spans(toks, text, lexicon, attach)
@@ -77,6 +81,7 @@ def candidates(tokens, texts, lexicon, attach: set[str], max_n: int = 3) -> list
             if cur and not (gap in JOINERS or gap == " "):
                 runs.append(cur)
                 cur = []
+            f = restore.get(f, f)
             cur.append(lexicon.synonym_map.get(f, f))
             prev_end = e
         if cur:
@@ -149,6 +154,47 @@ def c_value(vocab: list[str], f: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return out, parent_share
 
 
+def phrase_quality_fail(term: str, q: dict) -> bool:
+    """개념이 아닌 구문: 시간·문서 형식어만으로 된 구문('이날 오전', '공식 홈페이지', '모닝 리포트'),
+    직함형('김 부장': 한 글자 성 + 직함)."""
+    parts = term.split(" ")
+    form = set(q.get("time_words", [])) | set(q.get("form_words", []))
+    if all(p in form for p in parts):
+        return True
+    if len(parts) >= 2 and parts[-1] in form and parts[-1] in set(q.get("form_words", [])):
+        return True
+    titles = set(q.get("title_words", []))
+    if parts[-1] in titles and (len(parts) == 1 or (len(parts[0]) == 1 and HANGUL.search(parts[0]))):
+        return True
+    return False
+
+
+def grade(zA, zB, zC, shift_AB, shift_AC, persistence, growth, recent_df, parent_share,
+          is_stop, market_phrase, quality_fail, rules: dict) -> tuple[np.ndarray, np.ndarray, dict]:
+    """등급 부여. 기준값은 통계(유의성 1.96, 순위 변동 분위수)와 설정(rules)에서 온다."""
+    z = rules.get("z", Z_SIG)
+    sigA, sigB, sigC = zA >= z, zB >= z, zC >= z
+    sig_any = sigA | sigB | sigC
+    worst = np.maximum(shift_AB, shift_AC)
+    med_shift = float(np.median(worst[sig_any])) if sig_any.any() else 0.0
+    q75_shift = float(np.quantile(shift_AB[sig_any], 0.75)) if sig_any.any() else 0.0
+    fragment = parent_share >= rules.get("fragment_share", 0.5)
+    hard_drop = is_stop | quality_fail
+    drop = (~sig_any & (np.maximum.reduce([zA, zB, zC]) <= 0)) | hard_drop
+    capped = fragment | market_phrase        # 최대 REVIEW
+    core = sigA & sigC & (worst <= med_shift) & (persistence >= rules.get("core_persistence", 0.5)) & ~capped
+    emerging = (growth >= rules.get("emerging_growth", 2.0)) & (recent_df >= rules.get("emerging_recent_df", 10)) \
+        & (zC > 0) & ~capped
+    review = sig_any & ((sigA != sigB) | (shift_AB > q75_shift) | capped)
+    cls = np.select([drop, core, emerging, review, sig_any], ["DROP", "CORE", "EMERGING", "REVIEW", "EXTENDED"], "DROP")
+    reason = np.select(
+        [is_stop, quality_fail, fragment & ~drop, market_phrase & ~drop, core, emerging & ~drop, review & ~drop, sig_any],
+        ["승인 불용어", "구문 품질 규칙(시간·문서 형식어·직함형)", "상위 복합어의 일부로 주로 쓰임",
+         "시장 구문 포함", "A·C 유의, 순위 안정, 지속성 기준 충족", "최근 6개월 비중 급증, 특이도 양(+)",
+         "REVIEW 포함 여부에 따라 유의성·순위 변동", "한 가지 이상 방식에서 유의"], "세 방식 모두 특이도 낮음")
+    return cls, reason, {"rank_shift_median": med_shift, "rank_shift_AB_q75": q75_shift}
+
+
 def pct(x: np.ndarray) -> np.ndarray:
     return pd.Series(x).rank(pct=True).to_numpy()
 
@@ -210,9 +256,19 @@ def run_e3(cfg: dict, raw: pd.DataFrame, out_root: Path, min_df: int = 5) -> dic
         assert arts["relevance_decision"].notna().all(), "E2 결과와 기사 집합이 다르다 (스냅샷 확인)"
         names = space_joined_names(sorted(corpus.article_company["company"].unique()),
                                    cfg["cleaning"].get("company_aliases") or {})
-        texts = prepped_texts(corpus.articles, names)
-        tokens = tokenize_corpus(texts, names, out_root / "cache")
-        dts = candidates(tokens, texts, lex, set(cfg["keywords"].get("attach_suffixes", [])))
+        e3c = cfg.get("e3", {})
+        market_words = set(cfg["layers"]["market_seed"]) | lex.stopwords | set(e3c.get("market_phrase_words", []))
+        # 보호 개체: 작품명·정책명을 한 토큰으로 묶어 형태소 분석 → 원래 표기로 복원
+        ents = protected_entities(corpus.articles, market_words)
+        pe = run.dir / "05_protected_entities.csv"
+        ents.to_csv(pe, index=False, encoding="utf-8-sig")
+        run.artifact(pe, "protected_entities", rows=len(ents))
+        prot = ents[ents["protect"]]["entity"]
+        restore = {_space_free(e): e for e in prot}
+        names_tok = names + [e for e in prot if e not in set(names)]
+        texts = prepped_texts(corpus.articles, names_tok)
+        tokens = tokenize_corpus(texts, names_tok, out_root / "cache")
+        dts = candidates(tokens, texts, lex, set(cfg["keywords"].get("attach_suffixes", [])), restore=restore)
         X, vocab = doc_term(dts, min_df)
         st["rows_out"] = len(vocab)
 
@@ -229,7 +285,9 @@ def run_e3(cfg: dict, raw: pd.DataFrame, out_root: Path, min_df: int = 5) -> dic
         cval, parent_share = c_value(vocab, df_half)
         from .text import token_form
         co_names = {token_form(n) for n in names} | set(corpus.article_company["company"].unique())
-        entity_type = np.array(["기업" if t.replace(" ", "") in co_names else "개념" for t in vocab])
+        ent_names = set(ents["entity"])
+        entity_type = np.array(["기업" if t.replace(" ", "") in co_names else "작품·개체" if t in ent_names else "개념"
+                                for t in vocab])
         # 월별 (가중) 문서빈도 → 지속성·성장
         month = arts["date"].dt.to_period("M").astype(str).to_numpy()
         months = sorted(set(month))
@@ -269,7 +327,8 @@ def run_e3(cfg: dict, raw: pd.DataFrame, out_root: Path, min_df: int = 5) -> dic
             npmi[j, k] = -1  # 자기 자신 제외
         net = np.sort(npmi, axis=1)[:, -3:].mean(1)
         # 사전 점수 (백분위 정규화, 기획안 6.2 초기 가중치)
-        dict_score = 0.35 * pct(zA) + 0.20 * pct(np.log1p(df_half)) + 0.15 * pct(cval) + 0.15 * pct(net) + 0.15 * persistence
+        # 운영 순위는 B(절반 가중) 로그오즈. A·C는 민감도 비교용
+        dict_score = 0.35 * pct(zB) + 0.20 * pct(np.log1p(df_half)) + 0.15 * pct(cval) + 0.15 * pct(net) + 0.15 * persistence
         st["rows_out"] = len(vocab)
 
     with run.stage("compare") as st:
@@ -298,32 +357,16 @@ def run_e3(cfg: dict, raw: pd.DataFrame, out_root: Path, min_df: int = 5) -> dic
         st["rows_out"] = len(cmp)
 
     with run.stage("grade") as st:
-        sigA, sigB, sigC = zA >= Z_SIG, zB >= Z_SIG, zC >= Z_SIG
-        sig_any = sigA | sigB | sigC
-        # 안정성 기준: 유의 후보들 사이 순위 변동의 중앙값 (데이터에서 정함)
-        med_shift = float(np.median(np.maximum(shift_AB, shift_AC)[sig_any])) if sig_any.any() else 0.0
-        q75_shift = float(np.quantile(shift_AB[sig_any], 0.75)) if sig_any.any() else 0.0
         recent_df = mdf[:, rec6].sum(1)
-        is_stop = np.array([" " not in t and t in lex.stopwords for t in vocab])  # 승인된 불용어(1그램)는 표시만
-        emerging = (growth >= 2) & (recent_df >= 10) & (zC > 0) & ~is_stop
-        review = sig_any & ((sigA != sigB) | (shift_AB > q75_shift))
-        core = sigA & sigC & (np.maximum(shift_AB, shift_AC) <= med_shift) & (persistence >= 0.5)
-        drop = (~sig_any & (np.maximum.reduce([zA, zB, zC]) <= 0)) | is_stop
-        fragment = parent_share >= 0.5   # 과반이 한 상위 복합어 안에서 쓰이는 조각 (역할 ← 역할 수행 게임)
-        # 시장 씨앗어·승인 불용어를 포함한 구문 (하이브 주가, 장 초반 강세): 이미 승인된 목록 기준, 최대 REVIEW
-        market_words = set(cfg["layers"]["market_seed"]) | lex.stopwords
-        market_phrase = np.array([any(p in market_words for p in t.split(" ")) and not is_stop[j] for j, t in enumerate(vocab)])
-        review = review | ((fragment | market_phrase) & sig_any)
-        core = core & ~fragment & ~market_phrase
-        emerging = emerging & ~market_phrase
-        extended_ok = ~market_phrase
-        cls = np.where(drop, "DROP", np.where(core, "CORE", np.where(emerging & ~fragment, "EMERGING",
-                       np.where(review | ~extended_ok, "REVIEW", np.where(sig_any, "EXTENDED", "DROP")))))
-        reason = np.where(is_stop, "승인 불용어", np.where(fragment & ~drop, "상위 복합어의 일부로 주로 쓰임",
-                 np.where(market_phrase & ~drop, "시장 씨앗어·승인 불용어 포함 구문", np.where(core, "A·C 유의, 순위 안정, 지속성≥0.5",
-                 np.where(emerging & ~drop, "최근 6개월 비중 2배 이상, 특이도 양(+)",
-                 np.where(review & ~drop, "REVIEW 포함 여부에 따라 유의성·순위 변동",
-                 np.where(sig_any, "한 가지 이상 방식에서 유의", "세 방식 모두 특이도 낮음")))))))
+        is_stop = np.array([" " not in t and t in lex.stopwords for t in vocab])  # 승인된 불용어(1그램)
+        # 시장 구문: 시장 씨앗어·승인 불용어·E3.1 시장 구문 단어를 포함 (하이브 주가, 장 초반 강세, 특징주)
+        market_phrase = np.array([(any(p in market_words for p in t.split(" ")) or t.replace(" ", "") in market_words)
+                                  and not is_stop[j] and entity_type[j] == "개념" for j, t in enumerate(vocab)])
+        quality_fail = np.array([entity_type[j] == "개념" and phrase_quality_fail(t, e3c.get("phrase_quality", {}))
+                                 for j, t in enumerate(vocab)])
+        cls, reason, gth = grade(zA, zB, zC, shift_AB, shift_AC, persistence, growth, recent_df, parent_share,
+                                 is_stop, market_phrase, quality_fail, e3c.get("grade", {}))
+        med_shift, q75_shift = gth["rank_shift_median"], gth["rank_shift_AB_q75"]
         st["rows_out"] = int((cls != "DROP").sum())
 
     with run.stage("write") as st:
@@ -339,7 +382,7 @@ def run_e3(cfg: dict, raw: pd.DataFrame, out_root: Path, min_df: int = 5) -> dic
             return [arts["gid"].iat[r] for r in rows], [titles[r] for r in rows]
 
         keep = np.flatnonzero((cls != "DROP") | (df_all >= 50))
-        domain = pct(zA)
+        domain = pct(zB)
         recs = []
         for j in keep:
             ev_ids, ev_titles = evidence(j)
@@ -358,6 +401,11 @@ def run_e3(cfg: dict, raw: pd.DataFrame, out_root: Path, min_df: int = 5) -> dic
                 "run_id": run.run_id,
             })
         dic = pd.DataFrame(recs).sort_values(["class_auto", "dictionary_score"], ascending=[True, False])
+        # E5가 다시 계산하지 않도록 기사×후보 행렬과 순서를 저장
+        sparse.save_npz(run.dir / "03_doc_term.npz", X.tocsr())
+        (run.dir / "03_doc_term_vocab.json").write_text(json.dumps(vocab, ensure_ascii=False), encoding="utf-8")
+        arts[["gid"]].to_csv(run.dir / "03_doc_term_rows.csv", index=False)
+        run.artifact(run.dir / "03_doc_term.npz", "doc_term", rows=X.shape[0])
         p3 = run.dir / "03_keyword_dictionary.csv"
         dic.to_csv(p3, index=False, encoding="utf-8-sig")
         run.artifact(p3, "keyword_dictionary", rows=len(dic))
@@ -384,8 +432,10 @@ def run_e3(cfg: dict, raw: pd.DataFrame, out_root: Path, min_df: int = 5) -> dic
         "unique_top100": {k: v[:15] for k, v in uniq.items()},
         "new_compounds_in_top200": new_compounds,
         "grade_counts": pd.Series(cls).value_counts().to_dict(),
+        "operating_rank": "B_half (A·C는 민감도 비교용)",
+        "protected_entities": int(len(ents)),
         "thresholds": {"z_significance": Z_SIG, "rank_shift_median": round(med_shift, 4), "rank_shift_AB_q75": round(q75_shift, 4),
-                       "emerging_growth": 2.0, "emerging_recent_df": 10, "core_persistence": 0.5},
+                       **e3c.get("grade", {})},
         "top": {g: dic[dic["class_auto"] == g]["keyword"].head(40).tolist() for g in ("CORE", "EXTENDED", "EMERGING", "REVIEW")},
     }
     (run.dir / "e3_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8")
