@@ -102,6 +102,11 @@ def contiguous(a: Token, b: Token, text: str) -> bool:
 
 def merge_tokens(tokens: list[Token], text: str, lexicon: Lexicon, attach_suffixes: set[str]) -> list[str]:
     """복합어 병합, 접미사 부착. 결과는 품사 제거된 형태 목록 (필터 전)."""
+    return [f for f, tag, _, _ in merged_spans(tokens, text, lexicon, attach_suffixes) if tag != "XSN"]
+
+
+def merged_spans(tokens: list[Token], text: str, lexicon: Lexicon, attach_suffixes: set[str]) -> list[tuple[str, str, int, int]]:
+    """merge_tokens와 같은 병합을 하되 (형태, 품사, 시작, 끝)을 유지한다 (구문 후보 추출용)."""
     forms: list[tuple[str, str, int, int]] = []
     i, n = 0, len(tokens)
     while i < n:
@@ -126,7 +131,7 @@ def merge_tokens(tokens: list[Token], text: str, lexicon: Lexicon, attach_suffix
         else:
             forms.append((f, tag, s, e))
         i += 1
-    return [f for f, tag, _, _ in forms if tag != "XSN"]
+    return forms
 
 
 def keep_form(w: str, min_hangul: int, min_latin: int) -> bool:

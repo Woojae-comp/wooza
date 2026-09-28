@@ -24,9 +24,26 @@ def main() -> None:
     e2.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
     e2.add_argument("--out", default="out")
     e2.add_argument("--llm-dir", default="out/llm", help="LLM 도전자 결과 폴더 (relevance_pred.csv)")
+    e3 = sub.add_parser("e3", help="E3: 핵심어 사전 실험 (A Strict / B Half / C Soft) → 03_keyword_dictionary.csv")
+    e3.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
+    e3.add_argument("--out", default="out")
+    e3.add_argument("--min-df", type=int, default=5)
     h = sub.add_parser("html", help="radar.json에서 radar.html만 다시 만든다")
     h.add_argument("--out", default="out")
     a = ap.parse_args()
+    if a.cmd == "e3":
+        import json
+        from pathlib import Path
+
+        from .e0 import input_files
+        from .e3 import run_e3
+        from .load import read_raw
+        cfg = load_config()
+        files = input_files(a.input or cfg["input"]["paths"])
+        cfg["_input_files"] = files
+        s = run_e3(cfg, read_raw(files), Path(a.out), a.min_df)
+        print(json.dumps(s, ensure_ascii=False, indent=1))
+        return
     if a.cmd == "e2":
         from pathlib import Path
 
