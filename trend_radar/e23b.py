@@ -189,6 +189,46 @@ def lm_gates(r: dict, g: dict) -> dict:
     return out
 
 
+def prepare(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
+    """E2.3b 입력 준비 (근거 계열 투표까지). 검토 표본(review.py)이 후보 판정을 재현할 때도 쓴다."""
+    from .config import Lexicon
+    from .e2 import anchors
+    from .e22 import drop_search_companies
+    from .layers import classify
+    from .load import build_corpus
+    from .text import extract_keywords, prepped_texts, space_joined_names, tokenize_corpus
+
+    r2 = cfg.get("e2", {})
+    corpus = build_corpus(raw, cfg)
+    arts = corpus.articles
+    aliases = cfg["cleaning"].get("company_aliases") or {}
+    names = space_joined_names(sorted(corpus.article_company["company"].unique()), aliases)
+    texts = prepped_texts(arts, names)
+    tokens = tokenize_corpus(texts, names, out_root / "cache")
+    kw = extract_keywords(texts, tokens, Lexicon.load(), cfg)
+    links = raw.drop_duplicates(cfg["input"]["columns"]["article_id"]).set_index(cfg["input"]["columns"]["article_id"])
+    sid = links["네이버링크"].astype(str).str.extract(r"[?&]sid1?=(\d{3})")[0] if "네이버링크" in links else pd.Series(dtype=str)
+    anc, _ = anchors(arts, sid)
+    raw_texts = [f"{t} {s}" for t, s in zip(arts["title"], arts["summary"])]
+    probe = np.array([any(w in t for w in r2.get("politics_probe_words", [])) for t in raw_texts]) | \
+        np.isin(anc["sid"].to_numpy(), r2.get("excluded_sections", ["100", "102"]))
+    kw_noco, _ = drop_search_companies(kw, arts, aliases, set(r2.get("industry_action_words", [])))
+    lab, _ = classify(arts, kw_noco, cfg)
+    F, strength_df, conflicts = families(arts, kw, lab, cfg, anc)
+    return {"corpus": corpus, "arts": arts, "anc": anc, "raw_texts": raw_texts, "probe": probe, "kw": kw, "lab": lab,
+            "seed_layer": lab["content"].to_numpy(), "F": F, "strength": strength_df, "conflicts": conflicts}
+
+
+def candidate_decisions(p: dict, prior: str = "M") -> dict[str, np.ndarray]:
+    """G3·H2 (사전분포 prior) 기사별 판정과 P(CONTENT). H2의 P(CONTENT) = P(NON-MARKET) × P(CONTENT | NON-MARKET)."""
+    out = {}
+    for s_name in ("G3", "H2"):
+        q, _ = FIT[s_name](p["F"], PRIORS[prior])
+        dec, _ = decide(q, p["seed_layer"])
+        out[s_name] = (dec, q[:, C])
+    return out
+
+
 def run_e23b(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
     from .config import Lexicon
     from .e2 import anchors, change_report
@@ -209,23 +249,9 @@ def run_e23b(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
     prev = pd.read_parquet(base_path)
 
     with run.stage("prepare", rows_in=len(raw)) as st:
-        corpus = build_corpus(raw, cfg)
-        arts = corpus.articles
-        aliases = cfg["cleaning"].get("company_aliases") or {}
-        names = space_joined_names(sorted(corpus.article_company["company"].unique()), aliases)
-        texts = prepped_texts(arts, names)
-        tokens = tokenize_corpus(texts, names, out_root / "cache")
-        kw = extract_keywords(texts, tokens, Lexicon.load(), cfg)
-        links = raw.drop_duplicates(cfg["input"]["columns"]["article_id"]).set_index(cfg["input"]["columns"]["article_id"])
-        sid = links["네이버링크"].astype(str).str.extract(r"[?&]sid1?=(\d{3})")[0] if "네이버링크" in links else pd.Series(dtype=str)
-        anc, _ = anchors(arts, sid)
-        raw_texts = [f"{t} {s}" for t, s in zip(arts["title"], arts["summary"])]
-        probe = np.array([any(w in t for w in r2.get("politics_probe_words", [])) for t in raw_texts]) | \
-            np.isin(anc["sid"].to_numpy(), r2.get("excluded_sections", ["100", "102"]))
-        kw_noco, _ = drop_search_companies(kw, arts, aliases, set(r2.get("industry_action_words", [])))
-        lab, _ = classify(arts, kw_noco, cfg)
-        seed_l = lab["content"].to_numpy()
-        F, strength_df, conflicts = families(arts, kw, lab, cfg, anc)
+        p = prepare(cfg, raw, out_root)
+        corpus, arts, anc, raw_texts, probe = p["corpus"], p["arts"], p["anc"], p["raw_texts"], p["probe"]
+        seed_l, F, strength_df, conflicts = p["seed_layer"], p["F"], p["strength"], p["conflicts"]
         st["rows_out"] = len(arts)
 
     ac = anc["anchor_content"].to_numpy().astype(bool)

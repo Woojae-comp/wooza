@@ -310,3 +310,23 @@ REVIEW 처리: 후보 추출·문서빈도·C-value·지속성·엔트로피·�
 - 계열 제거 민감도는 콘텐츠 근거 계열이 하나뿐이라 그 계열을 빼면 CONTENT가 17%p 빠질 수밖에 없다 (구조적으로 통과 불가능한 기준).
 - 탐침 중 CONTENT로 남은 365건은 콘텐츠 근거 계열(280)·정책 계열 투표 때문.
 - 결론: 정답 없이 규칙·사전분포를 계속 조정하면 탐침·앵커에 과적합된다 → **E2.1 운영 유지, 소규모 독립 검증세트 구축으로 전환**.
+
+## 3.6 E2 결과 비교·검토 절차 (파일 업로드 방식, 검토 절차 명세 v1.0, 2026-09-29)
+분석은 기존 방법(E2~E5)으로 수행하고 LLM은 결과를 검토한다. **LLM API 호출·자동 판정 코드는 없다.** LLM 응답은 보조 검토 의견이며
+정답·학습 라벨로 자동 전환하지 않는다. 운영 모델은 E2.1 유지(유지 자체가 정확성 검증은 아님). 이 절차로 운영 포인터를 바꾸지 않는다.
+
+- 판정 가이드 `docs/review/annotation_guide.md` (guide_version 1.0): content_relevance(SUBSTANTIVE/INCIDENTAL/NONE/UNCERTAIN)와
+  market_focus(YES/NO/UNCERTAIN)를 따로 기록. 실질적 콘텐츠 산업 정보가 있으면 시장 중심이어도 CONTENT. 자료 부족은 UNRESOLVED.
+  이전의 '시장 중심이면 모두 무관 + 콘텐츠 앵커 유입 거의 유지' 동시 요구는 폐기. 앵커는 보조 진단 지표.
+- 지시문 `docs/review/review_prompt.md`(1차), `review_prompt_compare.md`(2차). 해시는 표본 manifest에 기록.
+- 표본 (`python -m trend_radar review-sample`, 시드 20260929): 대표 400 (E2.1 판정 × 섹션 코드 유무 6층, 모집단 비례, 포함확률·가중치 기록)
+  + 경계·진단 200 (콘텐츠+주가 혼합, 코드 없는 정치 탐침어, 콘텐츠 정책, 방송사 출처, 모델 간 판정 변경 각 40).
+  중복기사군·정규화 제목 묶음 단위로 개발용 200 / 보관 비교용 400 분할 (묶음이 양쪽에 걸치지 않음). 초기 60건 = 개발용 대표 30 + 진단 30, 30건 × 2묶음.
+- 산출 폴더 `out/review/review_YYYYMMDD_HHMMSS/` (원문 포함, 커밋 안 함): `upload/stage1/`(가이드·지시문·입력 TSV·출력 틀),
+  `upload/stage2/`(익명 후보 비교 자료 — 기존 E2 판정 포함, 1차에서 올리지 않음), `internal/`(추출 사유·후보 대응표·원문 링크, 올리지 않음),
+  `model_responses/`(원래 응답·responses_log.csv), `review_manifest.json`, `UPLOAD_GUIDE.md`.
+- 병합 (`python -m trend_radar review-merge --dir …`): ID 누락·중복·미지 ID, 허용값, 근거 문구가 입력 제목·요약에 있는지(NFKC·공백 정규화 고정),
+  모델 간 일치·kappa, 섹션 코드 유무·추출 사유별 불일치, 기존 판정 교차표('LLM 참고 판정 기준'), 우선 검토 목록
+  (불일치 / 합의·근거 없음 / 정책·혼합 / 합의 10% 무작위). 연구자 확인은 researcher_review 열에만 기록.
+- 첫 표본: review_20260929_043040 (스냅샷 ds_20260926_4fcf50ec, 기준 E2 run_20260928_221314_4bc3; 비교 후보 E2.1·E2.2 noco_src·E2.3b G3·H2 Prior-M).
+- 섹션 예측 분류기는 보류. H2의 전체 기사 확률은 구현 그대로 P(CONTENT) = P(NON-MARKET) × P(CONTENT | NON-MARKET).

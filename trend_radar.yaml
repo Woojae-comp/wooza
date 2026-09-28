@@ -371,3 +371,12 @@ e23b_gates:
   anchor_content_min: 0.5        # 콘텐츠 앵커 중 CONTENT 예측 비율 (CONTENT 클래스 붕괴 확인, E2.3은 0.32)
   family_removal_pp: 10.0        # 한 계열 제거 시 CONTENT 비율 변화
   prior_agreement_min: 0.95      # Prior-L/M 판정 일치율
+
+review:
+  # E2 결과 비교·검토 (파일 업로드 방식, 검토 절차 명세 v1.0). LLM API 호출 없음, 운영 포인터 변경 없음
+  representative_n: 400        # E2.1 판정 × 섹션 코드 유무 6층, 모집단 비례
+  diagnostic_n: 200             # 혼합(콘텐츠+주가)·코드 없는 정치 탐침어·콘텐츠 정책·방송사 출처·모델 간 판정 변경, 범주별 40
+  representative_dev_n: 100
+  diagnostic_dev_n: 100
+  initial_n: 60                 # 개발용에서 먼저 검토 (30건 × 2묶음)
+  batch_size: 30

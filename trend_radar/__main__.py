@@ -51,9 +51,34 @@ def main() -> None:
     e23b.add_argument("--out", default="out")
     for p_ in (e3, e4, e41, e42, e5):
         p_.add_argument("--use-candidate", action="store_true", help="승인 전 후보 E2(e2.candidate_run_id)로 실행")
+    rv = sub.add_parser("review-sample", help="E2 비교·검토 표본 600건 추출 + 초기 60건 업로드 파일 (LLM API 호출 없음)")
+    rv.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
+    rv.add_argument("--out", default="out")
+    rv.add_argument("--seed", type=int, default=20260929)
+    rm = sub.add_parser("review-merge", help="저장된 LLM 응답(model_responses/)을 검사·병합하고 비교 보고서 작성")
+    rm.add_argument("--dir", required=True, help="out/review/review_YYYYMMDD_HHMMSS")
     h = sub.add_parser("html", help="radar.json에서 radar.html만 다시 만든다")
     h.add_argument("--out", default="out")
     a = ap.parse_args()
+    if a.cmd == "review-sample":
+        import json
+        from pathlib import Path
+
+        from .e0 import input_files
+        from .load import read_raw
+        from .review import build_review_sample
+        cfg = load_config()
+        files = input_files(a.input or cfg["input"]["paths"])
+        cfg["_input_files"] = files
+        print(json.dumps(build_review_sample(cfg, read_raw(files), Path(a.out), a.seed), ensure_ascii=False, indent=1, default=str))
+        return
+    if a.cmd == "review-merge":
+        import json
+        from pathlib import Path
+
+        from .review import merge_responses
+        print(json.dumps(merge_responses(Path(a.dir)), ensure_ascii=False, indent=1, default=str))
+        return
     if a.cmd == "e23b":
         import json
         from pathlib import Path
