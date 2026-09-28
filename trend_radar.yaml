@@ -1,0 +1,93 @@
+# 콘텐츠산업 Trend Radar 설정 (docs/TREND_RADAR.md)
+# 사용자가 검토·승인하는 불용어/동의어/복합어는 lexicon.yaml에 둔다.
+
+input:
+  # 원자료 경로 (glob 가능). 명령행 --input이 우선한다.
+  paths: ["data/raw/*.xlsx"]
+  columns:
+    article_id: 전역기사ID
+    date: 기사발행일
+    title: 제목
+    summary: 요약
+    company: 회사명
+    sectors: 분야목록
+    query_type: 검색구분
+    press: 언론사도메인
+    link: 원문링크
+  # 분야목록 안의 구분자 ("게임 · 콘텐츠솔루션 | 게임, 콘텐츠솔루션")
+  sector_separators: "[·,|]"
+
+cleaning:
+  # 제목+요약에 매핑된 기업명(또는 별칭)이 실제로 등장한 기사만 남긴다.
+  # 검색어가 우연히 걸린 기사(예: '대교' → 삼천포대교)를 걸러낸다.
+  require_company_mention: true
+  # 기업명 별칭: 원자료 회사명 → 기사에 등장하는 다른 표기
+  company_aliases:
+    NAVER: [네이버]
+    카카오: [Kakao]
+    하이브: [HYBE]
+    에스엠: [SM엔터테인먼트, SM엔터, SM]
+    JYP Ent.: [JYP, JYP엔터테인먼트, JYP엔터]
+    YG PLUS: [YG플러스]
+    와이지엔터테인먼트: [YG엔터테인먼트, YG엔터, YG]
+    CJ ENM: [CJENM]
+    NEW: [넥스트엔터테인먼트월드]
+  # 분석에서 뺄 기업 (사용자 승인 후 추가)
+  exclude_companies: []
+  # 이 기사 수 이상에서 글자 그대로 반복되는 요약 문장 조각은 안내문으로 보고 분석 텍스트에서 뺀다 (0이면 끔)
+  boilerplate_min_articles: 20
+  # 제외할 제목 머리말 태그 (예: 특징주, 마감시황). 사용자 승인 후 추가. 후보는 out/review/에 나온다
+  exclude_title_tags: []
+
+keywords:
+  pos_tags: [NNG, NNP, SL]       # 일반명사, 고유명사, 외국어
+  attach_suffixes: [형, 화]      # 생성+형 → 생성형, 디지털+화 → 디지털화
+  min_hangul_length: 2           # 한 글자 한글 명사 제외
+  min_latin_length: 2
+  min_df: 10                     # 전체 기간 최소 등장 기사 수 (어휘 사전)
+
+periods:
+  # 최근 구간과 비교 구간 (분기 단위)
+  recent_quarters: 2
+  base_quarters: 4
+  # 연간 비교: 최근 12개월 vs 그 이전 12개월, 그리고 첫 12개월
+  window_months: 12
+
+network:
+  top_n: 400                     # 네트워크에 넣을 상위 키워드 수 (구간별)
+  min_cooccurrence: 5
+  max_edges_per_node: 15
+  resolution: 1.0
+  seed: 42
+
+sectors:
+  significant_min_df: 5          # 분야 내에서 '유의미하게 등장' 판정
+  significant_min_share: 0.003   # 분야 기사 대비 0.3% 이상
+
+status:
+  emerging_min_recent_df: 20
+  emerging_max_base_share: 0.003
+  emerging_min_ratio: 2.5
+  growing_min_ratio: 1.3
+  growing_min_recent_df: 30
+  growing_min_trend: 0.6         # 최근 6분기 비중의 순위상관
+  growing_min_base_df: 20        # 기준 구간에도 있었어야 Growing (없던 것은 Emerging)
+  established_min_share: 0.01
+  established_max_cv: 0.4
+  declining_max_ratio: 0.6
+  declining_min_base_df: 30
+  event_peak_multiple: 4.0       # 월 비중이 중앙값의 N배 이상
+  event_min_peak_df: 15
+  event_concentration: 0.5       # 전후 3개월 기사 중 최고월 비중
+  spreading_min_sector_gain: 2
+  converging_min_new_links: 3
+  converging_min_early_df: 30    # 첫 12개월에도 있던 키워드만 (새 키워드는 Emerging)
+  company_specific_share: 0.6    # 최근 기사 중 한 기업 검색 비중이 이 이상이면 '기업 한정' 표시
+  structural_min_df: 50          # 두 구간 모두 이 이상 등장
+  structural_max_overlap: 0.35   # 연관어 TOP20 겹침(Jaccard) 이하
+  structural_min_context: 0.08   # 두 구간 모두 상위 연관어 평균 코사인 이상 (맥락이 뚜렷한 키워드만)
+
+output:
+  dir: out
+  profile_top_n: 1500            # 프로파일을 만드는 키워드 수
+  articles_per_list: 5

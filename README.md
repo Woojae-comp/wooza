@@ -1,3 +1,25 @@
+# wooza
+
+이 저장소에는 두 프로젝트가 있다.
+
+- **UZA** — 먼저 말을 걸기도 하는 대화 상대 (`uza/`, 아래)
+- **콘텐츠산업 Trend Radar** — 뉴스 원자료로 콘텐츠산업 트렌드를 탐지하는 분석 (`trend_radar/`)
+
+## 콘텐츠산업 Trend Radar
+
+설계 [`docs/TREND_RADAR_DESIGN.md`](docs/TREND_RADAR_DESIGN.md), 구현 [`docs/TREND_RADAR.md`](docs/TREND_RADAR.md).
+
+```bash
+pip install -r requirements.txt
+python -m trend_radar run --input "data/raw/*.xlsx"   # → out/radar.html
+python -m pytest tests/trend_radar
+```
+
+키워드 정제 규칙은 자동 적용하지 않는다. 후보는 `out/review/lexicon_candidates.xlsx`,
+Claude의 제안은 `proposals/`, 승인한 규칙은 `lexicon.yaml`에 둔다. 원자료(`data/`)와 결과(`out/`)는 커밋하지 않는다.
+
+---
+
 # UZA
 
 먼저 말을 걸기도 하는 대화 상대. 성격·행동 원칙은 `UZA.md`, 구현 설계는 [`docs/IMPLEMENTATION.md`](docs/IMPLEMENTATION.md).

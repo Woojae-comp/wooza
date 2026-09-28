@@ -6,3 +6,6 @@ __pycache__/
 .env
 .env.*
 !.env.example
+data/
+out/
+out_preview/

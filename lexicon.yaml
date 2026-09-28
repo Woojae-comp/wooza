@@ -1,0 +1,12 @@
+# 사용자가 승인한 키워드 정제 규칙.
+# 후보는 `python -m trend_radar candidates`가 out/review/에 만든다. 자동으로 여기에 추가하지 않는다.
+# 수정 후 `python -m trend_radar run`을 다시 실행하면 반영된다 (형태소 분석은 캐시를 재사용).
+
+# 분석에서 제거할 키워드
+stopwords: []
+
+# 표기 통합: 대표표기: [다른 표기, ...]
+synonyms: {}
+
+# 복합어: 연속으로 붙어 나온 형태소를 하나로 합친다. "영업+이익" → 영업이익
+compounds: []

@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>콘텐츠산업 Trend Radar</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f5f2; --surface: #fcfcfb; --surface-2: #f0efec; --line: #e2e1dc;
+  --text: #0b0b0b; --text-2: #52514e; --muted: #7b7a74;
+  --accent: #2a78d6; --accent-ink: #1c5cab;
+  --seq-0: #f0efec; --seq-1: #cde2fb; --seq-2: #9ec5f4; --seq-3: #6da7ec; --seq-4: #3987e5; --seq-5: #1c5cab;
+  --up: #1c5cab; --down: #b23a3a;
+  --tag-emerging: #e9f3ff; --tag-growing: #e7f6ee; --tag-established: #efefec; --tag-spreading: #f3eefe;
+  --tag-converging: #fdf0f5; --tag-declining: #fbecec; --tag-event: #fff5e0; --tag-company: #f0efec;
+  --shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #121211; --surface: #1a1a19; --surface-2: #232321; --line: #33332f;
+    --text: #ffffff; --text-2: #c3c2b7; --muted: #8f8e86;
+    --accent: #5598e7; --accent-ink: #86b6ef;
+    --seq-0: #232321; --seq-1: #104281; --seq-2: #184f95; --seq-3: #256abf; --seq-4: #3987e5; --seq-5: #86b6ef;
+    --up: #86b6ef; --down: #e66767;
+    --tag-emerging: #16304f; --tag-growing: #173726; --tag-established: #2a2a27; --tag-spreading: #2b2447;
+    --tag-converging: #3d2230; --tag-declining: #3d2020; --tag-event: #3b2e12; --tag-company: #2a2a27;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211; --surface: #1a1a19; --surface-2: #232321; --line: #33332f;
+  --text: #ffffff; --text-2: #c3c2b7; --muted: #8f8e86;
+  --accent: #5598e7; --accent-ink: #86b6ef;
+  --seq-0: #232321; --seq-1: #104281; --seq-2: #184f95; --seq-3: #256abf; --seq-4: #3987e5; --seq-5: #86b6ef;
+  --up: #86b6ef; --down: #e66767;
+  --tag-emerging: #16304f; --tag-growing: #173726; --tag-established: #2a2a27; --tag-spreading: #2b2447;
+  --tag-converging: #3d2230; --tag-declining: #3d2020; --tag-event: #3b2e12; --tag-company: #2a2a27;
+  --shadow: none;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.55 "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; }
+header { padding: 20px 16px 8px; max-width: 1280px; margin: 0 auto; }
+h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 17px; margin: 0 0 4px; }
+h3 { font-size: 14px; margin: 16px 0 6px; color: var(--text-2); font-weight: 600; }
+.sub { color: var(--text-2); font-size: 13px; }
+.muted { color: var(--muted); }
+nav { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
+nav .inner { max-width: 1280px; margin: 0 auto; padding: 0 16px; display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+nav button { flex: none; border: 0; background: none; color: var(--text-2); padding: 10px 12px; font: inherit; font-size: 13px; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
+nav button.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+main { max-width: 1280px; margin: 0 auto; padding: 16px; }
+.intro { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; color: var(--text-2); font-size: 13px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 10px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; box-shadow: var(--shadow); min-width: 0; }
+.kw { cursor: pointer; transition: border-color .12s; }
+.kw:hover, .kw:focus-visible { border-color: var(--accent); outline: none; }
+.kw .top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.kw .name { font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
+.kw .nums { font-size: 12px; color: var(--text-2); text-align: right; white-space: nowrap; }
+.kw .ev { font-size: 12px; color: var(--text-2); margin-top: 6px; }
+.kw .ev div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); white-space: nowrap; }
+.tag.Emerging { background: var(--tag-emerging); } .tag.Growing { background: var(--tag-growing); }
+.tag.Established { background: var(--tag-established); } .tag.Spreading { background: var(--tag-spreading); }
+.tag.Converging { background: var(--tag-converging); } .tag.Declining { background: var(--tag-declining); }
+.tag.Event-driven { background: var(--tag-event); } .tag.company { background: var(--tag-company); border-style: dashed; }
+.spark { display: block; width: 100%; height: 30px; margin-top: 6px; }
+.spark path.l { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+.spark path.a { fill: var(--accent); opacity: .10; }
+.spark rect.r { fill: var(--surface-2); }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 12px; }
+select, input[type=search] { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); max-width: 100%; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: var(--surface); color: var(--text-2); padding: 6px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.seg button.on { background: var(--accent); color: #fff; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--text-2); font-weight: 600; font-size: 12px; background: var(--surface); position: sticky; top: 0; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.tablewrap.tall { max-height: 560px; overflow: auto; }
+.link { color: var(--accent-ink); cursor: pointer; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 2px; }
+.cells { display: flex; gap: 2px; }
+.cell { flex: 1; min-width: 0; height: 26px; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--text); }
+.cell.dark { color: #fff; }
+.sectorhead { display: flex; gap: 2px; font-size: 10px; color: var(--muted); }
+.sectorhead span { flex: 1; min-width: 0; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill { display: inline-block; padding: 1px 6px; border-radius: 6px; background: var(--surface-2); margin: 2px 3px 2px 0; font-size: 12px; }
+.pill.new { background: var(--tag-growing); } .pill.lost { background: var(--tag-declining); text-decoration: line-through; text-decoration-color: var(--muted); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.art { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.art:last-child { border-bottom: 0; }
+.art a { color: var(--text); text-decoration: none; font-weight: 600; }
+.art a:hover { color: var(--accent-ink); text-decoration: underline; }
+.art .m { font-size: 12px; color: var(--muted); }
+.art .s { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+#panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(640px, 100vw); background: var(--surface); border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgba(0,0,0,.12); transform: translateX(100%); transition: transform .18s; z-index: 20; overflow-y: auto; }
+#panel.open { transform: none; }
+#panel .ph { position: sticky; top: 0; background: var(--surface); padding: 14px 16px 10px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; z-index: 2; }
+#panel .pb { padding: 12px 16px 40px; }
+#panel .close { border: 1px solid var(--line); background: var(--surface-2); color: var(--text); border-radius: 8px; padding: 4px 10px; cursor: pointer; font: inherit; }
+.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px; }
+.stat { background: var(--surface-2); border-radius: 8px; padding: 6px 10px; }
+.stat .k { font-size: 11px; color: var(--muted); }
+.stat .v { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+ul.ev { margin: 6px 0; padding-left: 18px; color: var(--text); }
+ul.ev li { margin: 2px 0; }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart .grid line { stroke: var(--line); }
+.chart .ax text { fill: var(--muted); font-size: 10px; }
+.chart path.l { fill: none; stroke: var(--accent); stroke-width: 2; }
+.chart path.a { fill: var(--accent); opacity: .08; }
+.chart .hl { stroke: var(--muted); stroke-dasharray: 2 3; }
+.chart circle.dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.chart rect.band { fill: var(--accent); opacity: .06; }
+.tip { position: absolute; pointer-events: none; background: var(--text); color: var(--surface); font-size: 12px; padding: 4px 8px; border-radius: 6px; white-space: nowrap; transform: translate(-50%, -110%); opacity: 0; transition: opacity .08s; }
+.cluster .kws { margin: 6px 0; }
+.note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.warn { background: var(--tag-event); border-radius: 8px; padding: 8px 12px; font-size: 13px; margin: 8px 0; }
+.qline { display: grid; grid-template-columns: 80px 1fr; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.qline .q { font-weight: 700; }
+.hidden { display: none !important; }
+@media (max-width: 720px) {
+  .two { grid-template-columns: 1fr; }
+  h1 { font-size: 19px; }
+  .qline { grid-template-columns: 1fr; gap: 2px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>콘텐츠산업 Trend Radar</h1>
+  <div class="sub" id="metaLine"></div>
+</header>
+<nav><div class="inner" id="tabs"></div></nav>
+<main id="main"></main>
+<aside id="panel" aria-hidden="true"><div class="ph"><div id="panelHead"></div><button class="close" id="panelClose">닫기</button></div><div class="pb" id="panelBody"></div></aside>
+<script>
+const D = /*__DATA__*/null;
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pct = (x, d = 2) => x == null ? "–" : (x * 100).toFixed(d) + "%";
+const fx = (x, d = 1) => x == null || !isFinite(x) ? "–" : Number(x).toFixed(d);
+const P = D.profiles, M = D.meta, S = M.sectors;
+const STATUS_KO = {"Emerging":"부상","Growing":"성장","Established":"정착","Spreading":"확산","Converging":"융합","Declining":"쇠퇴","Event-driven":"이벤트성"};
+
+$("#metaLine").innerHTML = `기사 ${M.articles.toLocaleString()}건 · ${M.date_min} ~ ${M.date_max} · 키워드 ${M.vocab.toLocaleString()}개 · 최근 구간 ${M.recent_q.join("~")} vs 직전 ${M.base_q[0]}~${M.base_q.at(-1)} · 정제 규칙 ${D.lexicon.stopwords}/${D.lexicon.synonyms}/${D.lexicon.compounds} (불용어/동의어/복합어, ${esc(D.lexicon.path)})`;
+
+function tagsHtml(p) {
+  const st = (p.status || []).map(s => `<span class="tag ${s}" title="${s}">${STATUS_KO[s] || s}</span>`).join("");
+  const co = p.company && p.company.specific ? `<span class="tag company" title="최근 기사의 ${Math.round(p.company.share*100)}%가 한 기업 검색">기업 한정 · ${esc(p.company.top)}</span>` : "";
+  return `<div class="tags">${st}${co}</div>`;
+}
+function spark(vals, w = 240, h = 30) {
+  const n = vals.length; if (!n) return "";
+  const mx = Math.max(...vals) || 1;
+  const x = i => (i / (n - 1)) * w, y = v => h - 2 - (v / mx) * (h - 4);
+  let d = vals.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  const rq = M.months.length - 6; // 최근 2분기 음영
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><rect class="r" x="${x(rq)}" y="0" width="${w - x(rq)}" height="${h}"/><path class="a" d="${d}L${w},${h}L0,${h}Z"/><path class="l" d="${d}" vector-effect="non-scaling-stroke"/></svg>`;
+}
+function kwCard(k, extra = "") {
+  const p = P[k]; if (!p) return "";
+  const ev = (p.evidence || []).slice(0, 2).map(e => `<div title="${esc(e)}">${esc(e)}</div>`).join("");
+  return `<div class="card kw" tabindex="0" data-k="${esc(k)}">
+    <div class="top"><div class="name">${esc(k)}</div><div class="nums">비중 ${pct(p.recent_share)} <span class="muted">(${fx(p.ratio)}배)</span><br>분야 ${p.diffusion.recent}/${p.diffusion.n_sectors}</div></div>
+    ${tagsHtml(p)}${spark(p.m_share)}<div class="ev">${ev}</div>${extra}</div>`;
+}
+function artHtml(id) {
+  const a = D.articles[String(id)]; if (!a) return "";
+  const t = a.u ? `<a href="${esc(a.u)}" target="_blank" rel="noopener">${esc(a.t)}</a>` : `<b>${esc(a.t)}</b>`;
+  return `<div class="art">${t}<div class="m">${a.d} · ${esc(a.p)} · ${esc((a.c||[]).join(", "))} · ${esc((a.f||[]).join(", "))}</div><div class="s">${esc(a.s)}</div></div>`;
+}
+function sortBy(list, key) {
+  const f = {share: k => -P[k].recent_share, ratio: k => -P[k].ratio, diffusion: k => -(P[k].diffusion.recent * 10 + P[k].diffusion.recent - P[k].diffusion.first), articles: k => -P[k].articles, duration: k => -P[k].growth_months}[key];
+  return [...list].filter(k => P[k]).sort((a, b) => f(a) - f(b));
+}
+function sortBar(id) {
+  return `<div class="toolbar"><span class="muted">정렬</span><select data-sort="${id}"><option value="share">최근 기사 비중</option><option value="ratio">증가 배율</option><option value="diffusion">분야 확산</option><option value="duration">증가 지속기간</option><option value="articles">전체 기사 수</option></select><span class="note">하나의 종합점수로 서열화하지 않습니다. 기준을 바꿔 보세요.</span></div>`;
+}
+function kwGrid(list, id, sort = "share") {
+  return `${sortBar(id)}<div class="grid" id="${id}" data-list='${esc(JSON.stringify(list))}'>${sortBy(list, sort).map(k => kwCard(k)).join("") || '<div class="muted">해당 없음</div>'}</div>`;
+}
+
+// ---------------------------------------------------------------- 탭
+const TABS = [
+  ["overall", "A 산업 전체"], ["sector", "B 분야별"], ["cross", "C 분야 간 공통"], ["conv", "D 융합 신호"],
+  ["emerging", "E 부상·성장·쇠퇴"], ["struct", "F 구조 변화"], ["time", "시계열 군집"], ["explore", "키워드 탐색"], ["review", "정제 검토"],
+];
+const render = {};
+
+render.overall = () => {
+  const cl = D.networks.recent.clusters;
+  const ch = Object.fromEntries(D.networks.cluster_changes.filter(c => c.cluster != null).map(c => [c.cluster, c]));
+  return `<div class="intro">지금 콘텐츠산업 전반에서 확대되는 이슈: 성장·부상·확산 상태이면서 최근 12개월 3개 이상 분야에서 유의미하게 등장한 키워드. 한 기업 검색에 집중된 키워드(기업 한정)는 뺐습니다. 각 카드의 근거 지표를 확인하고 최종 판단하세요.</div>
+  <h2>확대되는 이슈</h2>${kwGrid(D.overall.rising, "g-rising")}
+  <h3>지속 핵심 이슈 (Established)</h3>${kwGrid(D.overall.established, "g-est")}
+  <h3>최근 12개월 이슈 군집 (${esc(D.networks.recent.label)})</h3>
+  <div class="note">Louvain 군집. 이름은 중심 키워드로 만든 후보이며 확정이 아닙니다. 변화는 첫 12개월(${esc(D.networks.first.label)}) 군집과 키워드 겹침으로 대응시킨 결과입니다.</div>
+  <div class="grid" style="margin-top:8px">${cl.map(c => clusterCard(c, ch[c.id])).join("")}</div>`;
+};
+function clusterCard(c, chg) {
+  const kws = c.keywords.slice(0, 14).map(w => `<span class="pill ${P[w] ? "link" : ""}" data-k="${esc(w)}">${esc(w)}</span>`).join("");
+  let change = "";
+  if (chg) {
+    change = chg.status === "new" ? `<div class="tags"><span class="tag Emerging">새 군집</span></div>` :
+      `<div class="note">이전 군집과 유사도 ${fx(chg.similarity, 2)} · 추가: ${esc((chg.added || []).slice(0, 6).join(", ")) || "–"} · 빠짐: ${esc((chg.removed || []).slice(0, 6).join(", ")) || "–"}</div>`;
+  }
+  const arts = (c.arts || []).map(artHtml).join("");
+  return `<div class="card cluster"><div class="top" style="display:flex;justify-content:space-between;gap:8px"><b>[${esc(c.name_candidate)}]</b><span class="muted" style="white-space:nowrap">키워드 ${c.size} · 기사 ${(c.articles ?? 0).toLocaleString()}</span></div>
+    ${change}<div class="kws">${kws}</div><details><summary class="muted">대표 기사</summary>${arts}</details></div>`;
+}
+
+let curSector = S[0];
+render.sector = () => {
+  const opts = S.map(s => `<option ${s === curSector ? "selected" : ""}>${esc(s)}</option>`).join("");
+  const d = D.sectors[curSector];
+  const row = r => `<tr><td><span class="${P[r.k] ? "link" : ""}" data-k="${esc(r.k)}">${esc(r.k)}</span>${r.company_specific ? ` <span class="tag company">기업 한정 · ${esc(r.top_company)}</span>` : ""}</td>
+    <td>${(r.status || []).map(s => `<span class="tag ${s}">${STATUS_KO[s]}</span>`).join(" ")}</td>
+    <td class="n">${pct(r.recent_share)}</td><td class="n">${pct(r.base_share)}</td><td class="n">${fx(r.ratio)}배</td><td class="n">${fx(r.lift)}배</td>
+    <td>${(r.arts || []).slice(0, 1).map(id => { const a = D.articles[id]; return a ? `<span class="muted">${a.d}</span> ${esc(a.t)}` : ""; }).join("")}</td></tr>`;
+  const tbl = (rows, title, note) => `<h3>${title}</h3>${note ? `<div class="note">${note}</div>` : ""}<div class="tablewrap"><table><thead><tr><th>키워드</th><th>상태</th><th class="n">최근 비중</th><th class="n">직전 비중</th><th class="n">증가</th><th class="n">분야 특화</th><th>최근 기사</th></tr></thead><tbody>${rows.map(row).join("") || '<tr><td colspan="7" class="muted">해당 없음</td></tr>'}</tbody></table></div>`;
+  return `<div class="toolbar"><span class="muted">분야</span><select id="secSel">${opts}</select><span class="muted">기사 ${d.articles.toLocaleString()}건 (최근 12개월 ${d.recent_articles.toLocaleString()}건) · 비중은 분야 기사 대비 · 분야 특화 = 분야 내 비중 / 전체 비중</span></div>
+    <h2>${esc(curSector)} 이슈 군집 (최근 12개월)</h2>
+    <div class="grid">${d.clusters.map(c => clusterCard(c, c.change ? {status: c.change, added: c.added, removed: c.removed, similarity: null} : null)).join("")}</div>
+    ${tbl(d.rising, "분야 내 부상·성장 키워드")}
+    ${tbl(d.specialized, "분야 특화 이슈", "최근 12개월 이 분야 비중이 전체 대비 2배 이상")}
+    ${tbl(d.established, "분야 지속 핵심")}
+    ${tbl(d.event, "분야 이벤트성 급증")}
+    ${tbl(d.declining, "분야 쇠퇴")}`;
+};
+
+render.cross = () => {
+  const head = `<div class="sectorhead">${S.map(s => `<span title="${esc(s)}">${esc(s.replace("방송 및 영상", "방송·영상"))}</span>`).join("")}</div>`;
+  const cards = sortBy(D.cross_sector, "diffusion").map(k => {
+    const p = P[k], d = p.diffusion;
+    const mx = Math.max(...Object.values(d.recent_share)) || 1;
+    const cells = S.map(s => {
+      const v = d.recent_share[s] || 0, a = d.arrows[s], lv = v <= 0 ? 0 : Math.min(5, 1 + Math.floor(4 * v / mx));
+      return `<div class="cell ${lv >= 4 ? "dark" : ""}" style="background:var(--seq-${lv})" title="${esc(s)}: 최근 12개월 비중 ${pct(v)} · 직전 12개월 대비 ${a}">${a}</div>`;
+    }).join("");
+    const path = d.path.map(([s, h]) => `${esc(s)}(${h})`).join(" → ");
+    return kwCard(k, `<div style="margin-top:8px">${head}<div class="cells">${cells}</div><div class="note">확산 경로: ${path || "–"}</div></div>`);
+  }).join("");
+  return `<div class="intro">여러 분야에서 동시에 확대되는 이슈. 최근 12개월 3개 이상 분야에서 유의미(분야 기사 ${pct(0.003, 1)} 이상, 5건 이상)하고 2개 이상 분야에서 직전 12개월 대비 증가(↑ 1.25배, ↑↑ 2배). 칸 색은 분야 내 비중, 기호는 변화입니다. 확산 경로는 분야마다 처음 유의미해진 반기입니다.</div><div class="grid">${cards || '<div class="muted">해당 없음</div>'}</div>`;
+};
+
+let convUnit = "year";
+render.conv = () => {
+  const sc = D.sector_convergence[convUnit];
+  const ps = sc.periods;
+  const pairRow = r => {
+    const vals = r.distance.map(v => v == null ? null : v);
+    const valid = vals.filter(v => v != null);
+    const mn = Math.min(...valid), mx = Math.max(...valid);
+    return `<tr><td><b>${esc(r.a)} × ${esc(r.b)}</b></td>
+      ${vals.map(v => `<td class="n">${v == null ? "–" : v.toFixed(2)}</td>`).join("")}
+      <td class="n" style="color:${r.change < 0 ? "var(--up)" : "var(--text-2)"}">${r.change > 0 ? "+" : ""}${r.change.toFixed(2)}</td>
+      <td class="n">${pct(r.shared_rate[0], 1)} → ${pct(r.shared_rate.at(-1), 1)}</td>
+      <td>${r.bridge_new.slice(0, 6).map(w => `<span class="pill ${P[w] ? "link" : ""}" data-k="${esc(w)}">${esc(w)}</span>`).join("")}</td></tr>`;
+  };
+  const kp = D.keyword_pairs.slice(0, 40).map(r => `<tr><td><span class="${P[r.a] ? "link" : ""}" data-k="${esc(r.a)}">${esc(r.a)}</span> × <span class="${P[r.b] ? "link" : ""}" data-k="${esc(r.b)}">${esc(r.b)}</span>${r.different_early_cluster ? ' <span class="tag Converging">다른 군집이었음</span>' : ""}</td><td class="n">${fx(r.early_distance, 2)}</td><td class="n">${fx(r.recent_distance, 2)}</td><td class="n">${r.early_co} → ${r.recent_co}</td></tr>`).join("");
+  const br = D.bridges.slice(0, 20).map(b => `<tr><td><span class="${P[b.keyword] ? "link" : ""}" data-k="${esc(b.keyword)}">${esc(b.keyword)}</span></td><td class="n">${b.clusters}</td><td class="n">${fx(b.betweenness, 3)}</td><td>${esc(b.cluster_names.join(" / "))}</td></tr>`).join("");
+  return `<div class="intro">공통 트렌드(같은 키워드가 여러 분야에서 증가)와 달리, 융합은 <b>관계가 약했던 분야·이슈가 가까워지는 현상</b>입니다. 분야 거리는 각 분야에서 전체 대비 과대표현된 키워드 프로필의 코사인 거리(1 − 유사도)입니다. 분야 소속이 기업 매핑에서 오므로 기업명 키워드는 거리 계산에서 뺐습니다. 교차 기사는 서로 다른 기업을 통해 두 분야에 함께 걸린 기사의 비율입니다.</div>
+    <div class="toolbar"><span class="muted">단위</span><div class="seg" id="convSeg"><button data-u="year" class="${convUnit === "year" ? "on" : ""}">연도</button><button data-u="half" class="${convUnit === "half" ? "on" : ""}">반기</button></div></div>
+    <h2>분야 간 거리 변화 (가까워진 순)</h2>
+    <div class="tablewrap tall"><table><thead><tr><th>분야 쌍</th>${ps.map(p => `<th class="n">${esc(p)}</th>`).join("")}<th class="n">변화</th><th class="n">교차 기사</th><th>새로 공유된 특징 키워드</th></tr></thead><tbody>${sc.pairs.map(pairRow).join("")}</tbody></table></div>
+    <div class="note">마지막 구간(${esc(ps.at(-1))})이 부분 기간이면 기사 수가 적어 거리 추정이 흔들릴 수 있습니다.</div>
+    <h2 style="margin-top:18px">새로 가까워진 키워드 쌍</h2>
+    <div class="note">첫 12개월(${M.first12.join("~")})에는 각각 20건 이상 있었지만 거의 같이 나오지 않다가(코사인 &lt; 0.05), 최근 12개월(${M.recent12.join("~")}) 함께 등장한 쌍. 거리 = 1 − 코사인.</div>
+    <div class="tablewrap tall" style="margin-top:6px"><table><thead><tr><th>키워드 쌍</th><th class="n">이전 거리</th><th class="n">최근 거리</th><th class="n">동시등장 기사</th></tr></thead><tbody>${kp || '<tr><td colspan="4" class="muted">해당 없음</td></tr>'}</tbody></table></div>
+    <h2 style="margin-top:18px">군집을 잇는 다리 키워드 (최근 12개월)</h2>
+    <div class="tablewrap"><table><thead><tr><th>키워드</th><th class="n">연결 군집 수</th><th class="n">매개중심성</th><th>연결된 군집</th></tr></thead><tbody>${br}</tbody></table></div>
+    <h3>키워드 단위 융합 (Converging)</h3>${kwGrid(D.converging, "g-conv", "ratio")}`;
+};
+
+let emTab = "emerging";
+render.emerging = () => {
+  const lists = {emerging: ["부상 Emerging", D.emerging, "기존 비중이 낮았는데(직전 0.3% 이하) 최근 2.5배 이상 증가. 급증한 한 달을 빼도 조건을 만족해야 합니다."],
+    growing: ["성장 Growing", D.growing, "직전 구간에도 있었고, 최근 6분기 비중이 꾸준히 증가(순위상관 0.6 이상), 최근 1.3배 이상."],
+    spreading: ["확산 Spreading", D.spreading, "유의미하게 등장하는 분야 수가 첫 12개월보다 2개 이상 늘어남."],
+    declining: ["쇠퇴 Declining", D.declining, "비중이 0.6배 이하로 줄고 6분기 추세가 감소하며, 네트워크 연결 수도 줄어듦."],
+    event: ["이벤트성 Event-driven", D.event, "한 달 비중이 평소의 4배 이상, 전후 3개월 기사의 절반 이상이 그 달에 몰리고 이후 되돌아간 급증. 트렌드와 구분해서 봅니다."]};
+  const [title, list, note] = lists[emTab];
+  return `<div class="intro">모든 증가를 같은 트렌드로 보지 않습니다. 키워드 하나가 여러 상태를 동시에 가질 수 있습니다.</div>
+    <div class="toolbar"><div class="seg" id="emSeg">${Object.entries(lists).map(([k, v]) => `<button data-e="${k}" class="${k === emTab ? "on" : ""}">${v[0]} (${v[1].length})</button>`).join("")}</div></div>
+    <div class="note" style="margin-bottom:8px">${note}</div>${kwGrid(list, "g-em", emTab === "declining" ? "articles" : "ratio")}`;
+};
+
+render.struct = () => {
+  const cards = D.structural.filter(k => P[k] && P[k].structure).map(k => {
+    const s = P[k].structure;
+    const ea = s.early_assoc.slice(0, 10).map(([w]) => `<span class="pill ${s.recent_assoc.some(x => x[0] === w) ? "" : "lost"}">${esc(w)}</span>`).join("");
+    const ra = s.recent_assoc.slice(0, 10).map(([w]) => `<span class="pill ${s.early_assoc.some(x => x[0] === w) ? "" : "new"}">${esc(w)}</span>`).join("");
+    return `<div class="card kw" tabindex="0" data-k="${esc(k)}"><div class="top"><div class="name">${esc(k)}</div><div class="nums">기사 ${s.early_df} → ${s.recent_df}<br>연관어 겹침 ${fx(s.assoc_overlap, 2)}</div></div>${tagsHtml(P[k])}
+      <div class="two" style="margin-top:8px"><div><div class="muted" style="font-size:12px">이전 (${M.first12.join("~")})</div>${ea}</div><div><div class="muted" style="font-size:12px">최근 (${M.recent12.join("~")})</div>${ra}</div></div>
+      ${s.cluster_moved ? `<div class="note">군집 이동: [${esc(s.early_cluster)}] → [${esc(s.recent_cluster)}]</div>` : ""}</div>`;
+  }).join("");
+  return `<div class="intro">키워드 빈도가 크게 변하지 않아도 <b>주변에 연결되는 키워드가 달라진 경우</b>(Context Shift)입니다. 두 구간 모두 50건 이상, 연관어 TOP20 겹침(Jaccard) 0.35 이하, 두 구간 모두 연관 맥락이 뚜렷한(상위 연관어 평균 코사인 0.08 이상) 키워드입니다. 초록은 새 연관어, 취소선은 사라진 연관어입니다.</div><div class="grid">${cards || '<div class="muted">해당 없음</div>'}</div>`;
+};
+
+render.time = () => {
+  const rows = D.quarters.map(q => `<div class="qline"><div><div class="q">${esc(q.period)}</div><div class="muted" style="font-size:12px">기사 ${q.articles.toLocaleString()} · 군집 ${q.n_clusters}</div></div><div>
+    <div>${q.top_keywords.slice(0, 12).map(w => `<span class="pill ${P[w] ? "link" : ""}" data-k="${esc(w)}">${esc(w)}</span>`).join("")}</div>
+    ${(q.new_clusters || []).length ? `<div style="margin-top:4px"><span class="tag Emerging">새 군집</span> ${q.new_clusters.map(c => `[${esc(c.name)}]`).join(" ")}</div>` : ""}
+    ${(q.disappeared_clusters || []).length ? `<div style="margin-top:2px"><span class="tag Declining">사라진 군집</span> ${q.disappeared_clusters.map(c => `[${esc(c.name)}]`).join(" ")}</div>` : ""}
+    <details style="margin-top:4px"><summary class="muted">군집 ${q.clusters.length}개 보기</summary>${q.clusters.map(c => `<div style="font-size:12px;margin:3px 0"><b>[${esc(c.name_candidate)}]</b> ${esc(c.keywords.join(", "))}</div>`).join("")}</details></div></div>`).join("");
+  const mx = Math.max(...M.monthly_articles);
+  return `<div class="intro">분기마다 네트워크와 군집을 다시 계산하고, 직전 분기 군집과 키워드 겹침(Jaccard 0.2 이상)으로 이어 붙였습니다. 이어지는 군집이 없으면 새 군집, 대응되는 현재 군집이 없으면 사라진 군집입니다. 월별 기사 수가 크게 변하므로 모든 키워드 지표는 비중으로 비교합니다.</div>
+    <div class="card" style="margin-bottom:12px"><b>월별 기사 수</b> <span class="muted">(정제 후, 전역기사ID 기준)</span>${lineChart(M.monthly_articles.map(v => v), M.months, v => v.toLocaleString() + "건", null)}</div>
+    <div class="card">${rows}</div>`;
+};
+
+let exploreQ = "";
+render.explore = () => {
+  const all = Object.keys(P);
+  const hits = exploreQ ? all.filter(k => k.toLowerCase().includes(exploreQ.toLowerCase())).slice(0, 60) : sortBy(all, "articles").slice(0, 60);
+  return `<div class="toolbar"><input type="search" id="exploreIn" placeholder="키워드 검색 (${all.length.toLocaleString()}개 프로파일)" value="${esc(exploreQ)}" style="width:320px"></div><div class="grid">${hits.map(k => kwCard(k)).join("")}</div>`;
+};
+
+let revTab = "stop", revFilter = "제거 후보";
+render.review = () => {
+  const c = M.cleaning, cand = D.candidates || {};
+  const co = (c.company_mention || []).slice(0, 15).map(r => `<tr><td>${esc(r.company)}</td><td class="n">${r.rows.toLocaleString()}</td><td class="n">${pct(r.mention_rate, 0)}</td></tr>`).join("");
+  const tags = Object.entries(c.title_tags || {}).slice(0, 40).map(([t, n]) => `<span class="pill">[${esc(t)}] ${n}</span>`).join("");
+  const bp = (c.boilerplate_segments || []).slice(0, 25).map(r => `<tr><td class="n">${r.articles}</td><td>${esc(r.text)}</td></tr>`).join("");
+  let body = "";
+  if (revTab === "stop") {
+    const rows = (cand.stopwords || []).filter(r => !revFilter || r.recommendation === revFilter);
+    body = `<div class="toolbar"><div class="seg" id="revF">${["제거 후보", "검토 필요", "유지 권고"].map(f => `<button data-f="${f}" class="${f === revFilter ? "on" : ""}">${f}</button>`).join("")}</div></div>
+      <div class="tablewrap tall"><table><thead><tr><th>키워드</th><th>제안</th><th class="n">기사</th><th class="n">비중</th><th class="n">분야 균등도</th><th class="n">분기 변동</th><th>근거</th><th>기사 예시</th></tr></thead><tbody>${rows.map(r => `<tr><td><b>${esc(r.keyword)}</b></td><td>${esc(r.recommendation)}</td><td class="n">${r.articles.toLocaleString()}</td><td class="n">${pct(r.share, 1)}</td><td class="n">${fx(r.sector_evenness, 2)}</td><td class="n">${fx(r.quarter_cv, 2)}</td><td style="min-width:200px">${esc(r.reason)}</td><td style="min-width:260px;font-size:12px" class="muted">${esc(r.examples).split(" | ").join("<br>")}</td></tr>`).join("")}</tbody></table></div>`;
+  } else if (revTab === "syn") {
+    body = `<div class="tablewrap tall"><table><thead><tr><th>대표 표기</th><th>다른 표기</th><th>제안</th><th class="n">맥락 유사도</th><th class="n">기사</th><th>근거</th></tr></thead><tbody>${(cand.synonyms || []).map(r => `<tr><td><b>${esc(r.canonical)}</b></td><td>${esc(r.variant)}</td><td>${esc(r.recommendation)}</td><td class="n">${fx(r.context_similarity, 2)}</td><td class="n">${r.canonical_articles} / ${r.variant_articles}</td><td>${esc(r.evidence)}</td></tr>`).join("")}</tbody></table></div>`;
+  } else {
+    body = `<div class="tablewrap tall"><table><thead><tr><th>형태소</th><th>결합형</th><th>제안</th><th class="n">붙어 나온 횟수</th><th class="n">앞 비율</th><th class="n">뒤 비율</th><th>비고</th></tr></thead><tbody>${(cand.compounds || []).map(r => `<tr><td>${esc(r.compound)}</td><td><b>${esc(r.merged)}</b></td><td>${esc(r.recommendation)}</td><td class="n">${r.count.toLocaleString()}</td><td class="n">${fx(r.left_ratio, 2)}</td><td class="n">${fx(r.right_ratio, 2)}</td><td class="muted">${esc(r.note)}</td></tr>`).join("")}</tbody></table></div>`;
+  }
+  return `<div class="intro">자동 분석 결과를 확정하지 않습니다. 아래 후보는 <b>적용되지 않은 제안</b>입니다. 승인한 항목만 <code>lexicon.yaml</code>(불용어·동의어·복합어)과 <code>trend_radar.yaml</code>(제외 태그·기업)에 옮긴 뒤 다시 실행하세요. 전체 목록은 <code>out/review/lexicon_candidates.xlsx</code>에 있습니다.</div>
+    <h2>기사 정제 기록</h2>
+    <div class="stats" style="margin:8px 0 12px">
+      <div class="stat"><div class="k">원자료 행</div><div class="v">${c.raw_rows.toLocaleString()}</div></div>
+      <div class="stat"><div class="k">기업명 실제 등장 행</div><div class="v">${c.rows_company_mentioned.toLocaleString()}</div></div>
+      <div class="stat"><div class="k">분석 기사 (전역기사ID)</div><div class="v">${c.articles.toLocaleString()}</div></div>
+      <div class="stat"><div class="k">반복 안내문 조각 제거</div><div class="v">${(c.boilerplate_segment_count || 0).toLocaleString()}</div></div>
+      <div class="stat"><div class="k">제외 태그로 뺀 기사</div><div class="v">${(c.excluded_by_title_tag || 0).toLocaleString()}</div></div>
+    </div>
+    ${(c.excluded_title_tags || []).length ? `<div class="note">제외 태그: ${esc(c.excluded_title_tags.join(", "))}</div>` : ""}
+    <div class="two"><div><h3>기업명 등장률이 낮은 기업</h3><div class="note">검색은 되었지만 제목·요약에 기업명이 나오지 않은 행은 뺐습니다. 등장률이 매우 낮으면 검색어가 다른 뜻으로 걸렸을 수 있습니다.</div><div class="tablewrap"><table><thead><tr><th>기업</th><th class="n">원자료 행</th><th class="n">등장률</th></tr></thead><tbody>${co}</tbody></table></div></div>
+    <div><h3>제목 머리말 태그</h3><div class="note">시세·종목 나열형 기사 태그는 트렌드와 무관한 어휘를 늘립니다. 제외할 태그를 골라 주세요.</div>${tags}</div></div>
+    <h3>제거한 반복 안내문 조각 (상위)</h3><div class="tablewrap tall" style="max-height:260px"><table><thead><tr><th class="n">기사</th><th>문장 조각 (숫자·기업명을 가려 같은 문형으로 묶음)</th></tr></thead><tbody>${bp}</tbody></table></div>
+    <h2 style="margin-top:18px">키워드 정제 후보</h2>
+    <div class="toolbar"><div class="seg" id="revSeg"><button data-r="stop" class="${revTab === "stop" ? "on" : ""}">불용어 (${(cand.stopwords || []).length})</button><button data-r="syn" class="${revTab === "syn" ? "on" : ""}">동의어·표기 (${(cand.synonyms || []).length})</button><button data-r="cmp" class="${revTab === "cmp" ? "on" : ""}">복합어 (${(cand.compounds || []).length})</button></div></div>${body}`;
+};
+
+// ---------------------------------------------------------------- 차트 (단일 계열 선, 크로스헤어 툴팁)
+let chartSeq = 0;
+function lineChart(vals, labels, fmt, bandFrom, peakIdx) {
+  const id = "c" + (++chartSeq), W = 600, H = 180, L = 44, R = 10, T = 10, B = 24;
+  const n = vals.length, mx = Math.max(...vals) * 1.1 || 1;
+  const x = i => L + (i / Math.max(n - 1, 1)) * (W - L - R), y = v => T + (1 - v / mx) * (H - T - B);
+  const d = vals.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  const ticks = [0, .5, 1].map(f => mx / 1.1 * f);
+  const grid = ticks.map(t => `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/>`).join("");
+  const yl = ticks.map(t => `<text x="${L - 6}" y="${y(t) + 3}" text-anchor="end">${fmt(t, true)}</text>`).join("");
+  const xl = labels.map((l, i) => (l.endsWith("-01") || i === n - 1) ? `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${l.endsWith("-01") ? l.slice(0, 4) : l.slice(2)}</text>` : "").join("");
+  const band = bandFrom != null ? `<rect class="band" x="${x(bandFrom)}" y="${T}" width="${W - R - x(bandFrom)}" height="${H - T - B}"/>` : "";
+  const peak = peakIdx != null && peakIdx >= 0 ? `<circle class="dot" cx="${x(peakIdx)}" cy="${y(vals[peakIdx])}" r="4"/>` : "";
+  setTimeout(() => {
+    const el = document.getElementById(id); if (!el) return;
+    const svg = el.querySelector("svg"), tip = el.querySelector(".tip"), hl = el.querySelector(".hl"), dot = el.querySelector(".hov");
+    const move = ev => {
+      const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) / r.width * W;
+      const i = Math.max(0, Math.min(n - 1, Math.round((px - L) / (W - L - R) * (n - 1))));
+      hl.setAttribute("x1", x(i)); hl.setAttribute("x2", x(i)); hl.style.opacity = 1;
+      dot.setAttribute("cx", x(i)); dot.setAttribute("cy", y(vals[i])); dot.style.opacity = 1;
+      tip.innerHTML = `${labels[i]} · ${fmt(vals[i], false, i)}`; tip.style.left = (x(i) / W * r.width) + "px"; tip.style.top = (y(vals[i]) / H * r.height) + "px"; tip.style.opacity = 1;
+    };
+    svg.addEventListener("pointermove", move);
+    svg.addEventListener("pointerleave", () => { tip.style.opacity = 0; hl.style.opacity = 0; dot.style.opacity = 0; });
+  });
+  return `<div class="chart" id="${id}"><svg viewBox="0 0 ${W} ${H}" role="img"><g class="grid">${grid}</g>${band}<path class="a" d="${d}L${x(n - 1)},${y(0)}L${x(0)},${y(0)}Z"/><path class="l" d="${d}"/>${peak}<line class="hl" x1="0" x2="0" y1="${T}" y2="${H - B}" style="opacity:0"/><circle class="dot hov" r="4" cx="0" cy="0" style="opacity:0"/><g class="ax">${yl}${xl}</g><rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/></svg><div class="tip"></div></div>`;
+}
+
+// ---------------------------------------------------------------- 상세 패널
+function openKw(k) {
+  const p = P[k]; if (!p) return;
+  const d = p.diffusion, s = p.structure;
+  $("#panelHead").innerHTML = `<h2 style="font-size:20px">${esc(k)}</h2>${tagsHtml(p)}`;
+  const peakIdx = p.peak && p.peak.spike ? M.months.indexOf(p.peak.month) : null;
+  const chart = lineChart(p.m_share, M.months, (v, axis, i) => axis ? (v * 100).toFixed(v * 100 < 1 ? 2 : 1) + "%" : `비중 ${(v * 100).toFixed(2)}% · ${p.m_count[i]}건`, M.months.length - 6, peakIdx);
+  const mx = Math.max(...Object.values(d.recent_share)) || 1;
+  const secRows = S.map(sec => { const v = d.recent_share[sec] || 0, lv = v <= 0 ? 0 : Math.min(5, 1 + Math.floor(4 * v / mx)); return `<tr><td>${esc(sec)}</td><td class="n"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--seq-${lv});vertical-align:middle;margin-right:6px"></span>${pct(v)}</td><td class="n">${d.arrows[sec]}</td></tr>`; }).join("");
+  const assoc = s ? `<h3>연관어 변화 (코사인)</h3><div class="two"><div><div class="muted" style="font-size:12px">이전 ${M.first12.join("~")}</div>${s.early_assoc.map(([w, c]) => `<span class="pill ${s.recent_assoc.some(x => x[0] === w) ? "" : "lost"}">${esc(w)} <span class="muted">${c.toFixed(2)}</span></span>`).join("")}</div><div><div class="muted" style="font-size:12px">최근 ${M.recent12.join("~")}</div>${s.recent_assoc.map(([w, c]) => `<span class="pill ${s.early_assoc.some(x => x[0] === w) ? "" : "new"}">${esc(w)} <span class="muted">${c.toFixed(2)}</span></span>`).join("")}</div></div>
+    <div class="note">연관어 겹침 ${fx(s.assoc_overlap, 2)} · 연관 프로필 유사도 ${fx(s.profile_similarity, 2)} · 군집 [${esc(s.early_cluster || "–")}] → [${esc(s.recent_cluster || "–")}] · 연결 중심성 ${fx(s.early_degree, 3)} → ${fx(s.recent_degree, 3)}</div>
+    ${s.converging_links && s.converging_links.length ? `<div class="note">새로 가까워진 이슈 (이전 → 최근 코사인): ${s.converging_links.map(([w, a, b]) => `${esc(w)} ${a.toFixed(2)}→${b.toFixed(2)}`).join(", ")}</div>` : ""}` : "";
+  const arts = [["대표 기사 (최근 12개월, 최근 연관어를 많이 포함)", p.arts.rep], ["최근 기사", p.arts.latest], ["급증 시점 기사 (" + (p.peak.month || "") + ")", p.arts.spike]]
+    .filter(([, l]) => l && l.length).map(([t, l]) => `<h3>${t}</h3>${l.map(artHtml).join("")}`).join("");
+  $("#panelBody").innerHTML = `
+    <div class="stats">
+      <div class="stat"><div class="k">등장 기사</div><div class="v">${p.articles.toLocaleString()}</div></div>
+      <div class="stat"><div class="k">전체 비중</div><div class="v">${pct(p.share)}</div></div>
+      <div class="stat"><div class="k">최근 비중 (${esc(p.recent_label)})</div><div class="v">${pct(p.recent_share)}</div></div>
+      <div class="stat"><div class="k">직전 대비</div><div class="v">${fx(p.ratio)}배</div></div>
+      <div class="stat"><div class="k">전기 / 전년동기 (비중)</div><div class="v" style="font-size:13px">${p.qoq == null ? "–" : (p.qoq > 0 ? "+" : "") + (p.qoq * 100).toFixed(0) + "%"} / ${p.yoy == null ? "–" : (p.yoy > 0 ? "+" : "") + (p.yoy * 100).toFixed(0) + "%"}</div></div>
+      <div class="stat"><div class="k">증가 지속기간</div><div class="v">${p.growth_months}개월</div></div>
+      <div class="stat"><div class="k">분야 확산</div><div class="v">${d.recent}/${d.n_sectors} <span class="muted" style="font-size:12px">(처음 ${d.first})</span></div></div>
+      <div class="stat"><div class="k">최초 / 최근 등장</div><div class="v" style="font-size:12px">${p.first_seen}<br>${p.last_seen}</div></div>
+      <div class="stat"><div class="k">최다 검색 기업 (최근)</div><div class="v" style="font-size:12px">${esc(p.company.top)} ${pct(p.company.share, 0)}<br><span class="muted">기업 ${p.company.n}곳</span></div></div>
+    </div>
+    <h3>탐지 근거</h3><ul class="ev">${p.evidence.map(e => `<li>${esc(e)}</li>`).join("")}</ul>
+    <div class="note">상태는 제안입니다. 기사와 지표를 보고 최종 판단하세요.</div>
+    <h3>월별 기사 비중 <span class="muted" style="font-weight:400">(음영: 최근 2분기${peakIdx != null && peakIdx >= 0 ? ", 점: 급증 월" : ""})</span></h3>${chart}
+    <h3>분야별 (최근 12개월 비중, 직전 12개월 대비 변화)</h3><div class="tablewrap"><table><tbody>${secRows}</tbody></table></div>
+    <div class="note">확산 경로: ${d.path.map(([a, b]) => `${esc(a)}(${b})`).join(" → ") || "–"}</div>
+    ${assoc}${arts}`;
+  $("#panel").classList.add("open"); $("#panel").setAttribute("aria-hidden", "false"); $("#panel").scrollTop = 0;
+}
+$("#panelClose").onclick = () => { $("#panel").classList.remove("open"); $("#panel").setAttribute("aria-hidden", "true"); };
+document.addEventListener("keydown", e => { if (e.key === "Escape") $("#panelClose").click(); if (e.key === "Enter" && e.target.dataset && e.target.dataset.k) openKw(e.target.dataset.k); });
+
+// ---------------------------------------------------------------- 이벤트
+let cur = "overall";
+try { const t = localStorage.getItem("radar-tab"); if (t && render[t]) cur = t; } catch (e) {}
+function show(t) {
+  cur = t; try { localStorage.setItem("radar-tab", t); } catch (e) {}
+  $("#tabs").innerHTML = TABS.map(([k, v]) => `<button data-t="${k}" class="${k === cur ? "on" : ""}">${v}</button>`).join("");
+  $("#main").innerHTML = render[t]();
+}
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-t]"); if (t) return show(t.dataset.t);
+  const k = e.target.closest("[data-k]"); if (k && P[k.dataset.k]) return openKw(k.dataset.k);
+  const u = e.target.closest("[data-u]"); if (u) { convUnit = u.dataset.u; return show("conv"); }
+  const em = e.target.closest("[data-e]"); if (em) { emTab = em.dataset.e; return show("emerging"); }
+  const r = e.target.closest("[data-r]"); if (r) { revTab = r.dataset.r; return show("review"); }
+  const f = e.target.closest("[data-f]"); if (f) { revFilter = f.dataset.f; return show("review"); }
+});
+document.addEventListener("change", e => {
+  if (e.target.id === "secSel") { curSector = e.target.value; show("sector"); }
+  if (e.target.dataset.sort) {
+    const g = document.getElementById(e.target.dataset.sort), list = JSON.parse(g.dataset.list);
+    g.innerHTML = sortBy(list, e.target.value).map(k => kwCard(k)).join("");
+  }
+});
+document.addEventListener("input", e => {
+  if (e.target.id === "exploreIn") { exploreQ = e.target.value; const pos = e.target.selectionStart; show("explore"); const i = $("#exploreIn"); i.focus(); i.setSelectionRange(pos, pos); }
+});
+show(cur);
+</script>
+</body>
+</html>
