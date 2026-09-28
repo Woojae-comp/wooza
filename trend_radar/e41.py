@@ -42,12 +42,16 @@ def has_nnp(term: str, kiwi) -> bool:
 
 
 def contains_word(term: str, words: set[str]) -> bool:
-    return bool(set(term.split(" ")) & words) or term.replace(" ", "") in words
+    """띄어쓴 단어 일치, 또는 붙여 쓴 복합어가 그 단어로 끝남 (교보증권·NH투자증권·목표주가)."""
+    t = term.replace(" ", "")
+    return bool(set(term.split(" ")) & words) or t in words or any(len(x) >= 2 and t.endswith(x) for x in words)
 
 
 def node_types(dic: pd.DataFrame, z_market: np.ndarray, market_words: set[str], company_sectors: dict[str, set[str]],
                core_sectors: set[str], ref: pd.DataFrame, rules: dict, kiwi=None) -> pd.DataFrame:
-    """dic: 행렬 어휘 순서의 사전 (keyword, entity_type, z_B_half, doc_freq). ref: 분위수 기준이 되는 사전 파일 행 (개념어)."""
+    """dic: 행렬 어휘 순서의 사전 (keyword, entity_type, z_B_half, doc_freq). ref: 분위수 기준 (네트워크 후보 개념어).
+    증권·시세: 시장 단어 포함, 또는 시장 앵커 z ≥ 1.96 이면서 시장 쪽이 콘텐츠 특이도보다 큼 (z_market ≥ z_B).
+    고유명사: 콘텐츠 특이도 비유의 ∩ 시장 쪽으로 기움(z_market > 0)일 때만 비콘텐츠 (아이유·작품명은 콘텐츠, LG전자는 비콘텐츠)."""
     from .text import token_form
 
     zB = dic["z_B_half"].fillna(0).to_numpy()
@@ -61,7 +65,7 @@ def node_types(dic: pd.DataFrame, z_market: np.ndarray, market_words: set[str], 
             secs = company_sectors.get(token_form(t), set())
             if secs & core_sectors:
                 out.append("content_company"); why.append("기업(핵심 분야)")
-            elif zB[k] >= Z_SIG:
+            elif zB[k] >= Z_SIG and z_market[k] < zB[k]:
                 out.append("noncontent_company_specific"); why.append("기업(연관산업), 콘텐츠 특이도 유의")
             else:
                 out.append("noncontent_company"); why.append("기업(연관산업)")
@@ -69,15 +73,15 @@ def node_types(dic: pd.DataFrame, z_market: np.ndarray, market_words: set[str], 
         if et == "작품·개체":
             out.append("work_person_policy"); why.append("작품·인물·정책명 (보호 개체)")
             continue
-        if contains_word(t, market_words) or (z_market[k] >= Z_SIG and zB[k] < Z_SIG):
+        if contains_word(t, market_words) or (z_market[k] >= Z_SIG and z_market[k] >= zB[k]):
             out.append("market_expression")
             why.append("시장 단어 포함" if contains_word(t, market_words) else f"시장 앵커 z={z_market[k]:.1f}")
             continue
         if kiwi is not None and has_nnp(t, kiwi):
-            if zB[k] >= Z_SIG:
-                out.append("proper_noun_content"); why.append("고유명사, 콘텐츠 특이도 유의")
+            if zB[k] < Z_SIG and z_market[k] > 0:
+                out.append("proper_noun_noncontent"); why.append(f"고유명사, 콘텐츠 비유의·시장 쪽 z={z_market[k]:.1f}")
             else:
-                out.append("proper_noun_noncontent"); why.append("고유명사, 콘텐츠 특이도 비유의")
+                out.append("proper_noun_content"); why.append("고유명사")
             continue
         if zp[k] < rules.get("general_max_z_pct", 0.5) and dp[k] >= rules.get("general_min_df_pct", 0.9):
             out.append("general_low_specificity"); why.append(f"B 특이도 백분위 {zp[k]:.2f}, 문서빈도 백분위 {dp[k]:.2f}")
@@ -347,10 +351,11 @@ def run_e41(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
         z_market = weighted_log_odds(X, am, acn)
         market_words = set(cfg["layers"]["market_seed"]) | set(cfg.get("e3", {}).get("market_phrase_words", [])) | lex.stopwords
         cand = dic["class_auto"].isin(["CORE", "EXTENDED", "EMERGING"]).to_numpy()
-        nt = node_types(dic, z_market, market_words, company_sectors, core, dic0, rules, kiwi=None)
+        ref = dic[cand]                                              # 분위수 기준 = 네트워크 후보 (DROP·REVIEW 제외)
+        nt = node_types(dic, z_market, market_words, company_sectors, core, ref, rules, kiwi=None)
         # 형태소 확인(NNP)은 네트워크 후보(CORE·EXTENDED·EMERGING)에만 적용
         kiwi = Kiwi()
-        nt_c = node_types(dic[cand].reset_index(drop=True), z_market[cand], market_words, company_sectors, core, dic0, rules, kiwi)
+        nt_c = node_types(dic[cand].reset_index(drop=True), z_market[cand], market_words, company_sectors, core, ref, rules, kiwi)
         nt.loc[cand, nt_c.columns] = nt_c.to_numpy()
         nt["concept_keep"] = nt["node_type"].isin(CONCEPT_KEEP) & np.isin(nt["class_auto"], rules.get("concept_classes", ["CORE", "EXTENDED"]))
         nt["extended_keep"] = nt["node_type"].isin(EXT_KEEP) & cand

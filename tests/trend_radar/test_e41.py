@@ -27,7 +27,7 @@ def test_node_types_entity_first_then_market_then_general():
         ("게임", "개념", "CORE", 30.0, 9000),          # 고빈도 콘텐츠 개념 → 유지
         ("신작 출시", "개념", "CORE", 12.0, 400),
     ])
-    ref = pd.concat([dic, _dic([(f"w{i}", "개념", "REVIEW", float(i % 7), i) for i in range(40)])])
+    ref = pd.concat([dic, _dic([(f"w{i}", "개념", "EXTENDED", float(i % 7), i) for i in range(40)])])
     z_market = np.array([0, 0, 0, 5.0, 4.0, 0.5, 0.2, -2.0])
     nt = node_types(dic, z_market, {"목표주가"}, {"넷마블": {"게임"}, "SBS": {"연관산업"}}, {"게임"}, ref, {})
     t = dict(zip(nt["keyword"], nt["node_type"]))
@@ -45,11 +45,14 @@ def test_node_types_entity_first_then_market_then_general():
 def test_node_types_proper_noun_split_by_specificity():
     from kiwipiepy import Kiwi
 
-    dic = _dic([("LG전자", "개념", "EXTENDED", 0.3, 200), ("김범수", "개념", "EXTENDED", 3.0, 150)])
-    nt = node_types(dic, np.zeros(2), set(), {}, set(), dic, {}, kiwi=Kiwi())
+    dic = _dic([("LG전자", "개념", "EXTENDED", 0.3, 200), ("김범수", "개념", "EXTENDED", 3.0, 150),
+                ("박진영", "개념", "EXTENDED", 0.8, 120), ("교보증권", "개념", "EXTENDED", 0.1, 90)])
+    nt = node_types(dic, np.array([1.5, 0.5, -2.0, 3.0]), {"증권"}, {}, set(), dic, {}, kiwi=Kiwi())
     t = dict(zip(nt["keyword"], nt["node_type"]))
-    assert t["LG전자"] == "proper_noun_noncontent"      # 빈도가 아니라 형태(NNP)로 먼저 거른다
+    assert t["LG전자"] == "proper_noun_noncontent"      # 형태(NNP) + 콘텐츠 비유의 + 시장 쪽
     assert t["김범수"] == "proper_noun_content"
+    assert t["박진영"] == "proper_noun_content"         # 콘텐츠 특이도가 낮아도 시장 쪽이 아니면 콘텐츠
+    assert t["교보증권"] == "market_expression"          # 붙여 쓴 복합어의 시장 단어 끝
 
 
 def test_community_matrix_size_normalized():
