@@ -26,7 +26,9 @@ def main() -> None:
 
         from .report import write_html
         out = Path(a.out)
-        write_html(json.loads((out / "radar.json").read_text(encoding="utf-8")), out / "radar.html")
+        layers = {k: json.loads((out / k / "radar.json").read_text(encoding="utf-8"))
+                  for k in ("content", "market") if (out / k / "radar.json").exists()}
+        write_html(layers or json.loads((out / "radar.json").read_text(encoding="utf-8")), out / "radar.html")
         print(out / "radar.html")
         return
     cfg = load_config(a.config)

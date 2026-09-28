@@ -87,6 +87,15 @@ def tokenize_corpus(texts: list[str], names: list[str], cache_dir: Path) -> list
     return toks
 
 
+def majority_tags(tokens: list[list[Token]]) -> dict[str, str]:
+    """형태별 가장 많이 붙은 품사. 복합어로 합쳐진 형태는 없으므로 호출하는 쪽에서 NNG로 본다."""
+    cnt: dict[str, Counter] = {}
+    for toks in tokens:
+        for f, _, _, t in toks:
+            cnt.setdefault(f, Counter())[t] += 1
+    return {f: c.most_common(1)[0][0] for f, c in cnt.items()}
+
+
 def contiguous(a: Token, b: Token, text: str) -> bool:
     return b[1] >= a[2] and text[a[2]:b[1]] in JOINERS
 

@@ -78,7 +78,7 @@ def make_raw(seed: int = 0) -> pd.DataFrame:
 
 @pytest.fixture(scope="module")
 def cfg():
-    return load_config(overrides={"keywords": {"min_df": 5}, "output": {"profile_top_n": 200},
+    return load_config(overrides={"keywords": {"min_df": 5}, "output": {"profile_top_n": 200}, "layers": {"enabled": False},
                                   "network": {"top_n": 50, "min_cooccurrence": 3}})
 
 
@@ -198,3 +198,27 @@ def test_share_normalization(result):
     p = r["profiles"]["웹툰"]
     shares = np.array(p["m_share"])
     assert shares[-6:].mean() > 3 * shares[:6].mean()
+
+
+def test_layers_split_content_and_market():
+    from trend_radar.layers import classify
+
+    cfg = load_config(overrides={"layers": {"min_df": 1, "min_evidence": 1, "min_score": 2.0}})
+    content = ["신작", "출시", "게임", "흥행", "이용자"]
+    market = ["주가", "목표주가", "투자의견", "공시", "영업이익"]
+    kw, titles, strong = [], [], []
+    for i in range(40):
+        kw.append(content + ["쿠키런"]); titles.append("쿠키런 신작 출시"); strong.append(True)
+        kw.append(market + ["증권"]); titles.append("목표주가 상향"); strong.append(True)
+    # 기업이 스쳐 간 시황 기사: 시장 성향이어도 자본시장 층에 넣지 않는다
+    kw.append(market); titles.append("코스닥 마감 시황"); strong.append(False)
+    # 기업이 스쳐 간 업계 동향 기사: 콘텐츠 성향이 뚜렷하면 콘텐츠 층
+    kw.append(content); titles.append("게임업계 신작 흥행"); strong.append(False)
+    arts = pd.DataFrame({"gid": [f"g{i}" for i in range(len(kw))], "title": titles, "strong": strong})
+    lab, kwt = classify(arts, kw, cfg)
+    w = dict(zip(kwt["keyword"], kwt["weight"]))
+    assert w["쿠키런"] > 0 > w["증권"]  # 씨앗에 없는 단어도 층 성향을 얻는다
+    assert lab["content"].iloc[0] and not lab["market"].iloc[0]
+    assert lab["market"].iloc[1] and not lab["content"].iloc[1]
+    assert not lab["market"].iloc[-2]
+    assert lab["content"].iloc[-1]

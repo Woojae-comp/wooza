@@ -12,10 +12,11 @@ from scipy import sparse
 
 from . import candidates as cand
 from .config import Lexicon
-from .load import build_corpus, read_raw
+from .layers import classify
+from .load import Corpus, build_corpus, read_raw
 from .metrics import add_periods, keyword_table, long_series
 from .network import build_network, cluster_articles, match_clusters
-from .text import DocTerm, extract_keywords, prepped_texts, space_joined_names, token_form, tokenize_corpus
+from .text import DocTerm, extract_keywords, majority_tags, prepped_texts, space_joined_names, token_form, tokenize_corpus
 from .trends import (STATUS_ORDER, add_half, arrow, bridge_keywords, diffusion, keyword_pair_convergence,
                      make_windows, quarterly_networks, sector_convergence, spread_path, status_frame, structural)
 
@@ -121,8 +122,82 @@ def run(cfg: dict, input_paths: list[str] | None = None, lexicon_path: str | Non
     log("형태소 분석 (캐시 사용)")
     tokens = tokenize_corpus(texts, names, out / "cache")
     kw = extract_keywords(texts, tokens, lex, cfg)
+
+    lc = cfg.get("layers") or {}
+    if not lc.get("enabled"):
+        res = analyze(cfg, corpus, arts, texts, tokens, kw, lex, lexicon_path, names, out, with_candidates)
+        _finish({"all": res}, out)
+        return res
+
+    log("층 분류 (콘텐츠·사업 / 자본시장)")
+    lab, kwt = classify(arts, kw, cfg)
+    companies = sorted(corpus.article_company["company"].unique())
+    co_words = {token_form(n) for n in names} | set(companies)
+    # 콘텐츠 층에서는 시장 어휘를 뺀다: 시장 씨앗 + 시장 성향이 강한 키워드 (기업명 제외)
+    drop = set(lc["market_seed"]) | {w for w, v in zip(kwt["keyword"], kwt["weight"])
+                                     if v <= lc["content_drop_market_weight"] and w not in co_words}
+    # 흔한 일반명사(NNG)로 콘텐츠 성향이 아닌 것도 뺀다 (확대·반영·가치·흐름 …).
+    # 고유명사(작품·서비스·인물·기업), 영문 용어(AI 등), 드물고 구체적인 단어(수익화)는 남는다.
+    tag = majority_tags(tokens)
+    content_seed = set(lc["content_seed"])
+    generic = {w for w, n, v in zip(kwt["keyword"], kwt["articles"], kwt["weight"])
+               if tag.get(w, "NNG") == "NNG" and v < lc["keyword_threshold"] and n >= lc["content_generic_min_df"]
+               and w not in content_seed and w not in co_words}
+    drop |= generic
+    extra = set(lc.get("content_extra_stopwords") or [])
+    suffixes = tuple(lc.get("content_drop_suffixes") or ())
+    drop |= extra | {w for w in kwt["keyword"] if suffixes and w.endswith(suffixes)}
+    review = out / "review"
+    review.mkdir(exist_ok=True)
+    with pd.ExcelWriter(review / "layers.xlsx") as xw:
+        kwt.to_excel(xw, sheet_name="키워드 층 성향", index=False)
+        pd.DataFrame({"keyword": sorted(drop), "reason": ["흔한 일반명사" if w in generic else "추가 제외어" if w in extra
+                                                  else "시장 어휘" for w in sorted(drop)]}
+                     ).to_excel(xw, sheet_name="콘텐츠 층 제외어", index=False)
+        lab.assign(title=arts["title"].to_numpy(), date=arts["date"].dt.date.to_numpy()).to_excel(
+            xw, sheet_name="기사 층", index=False)
+    layer_report = {"articles": int(len(arts)), "content": int(lab["content"].sum()), "market": int(lab["market"].sum()),
+                    "both": int((lab["content"] & lab["market"]).sum()),
+                    "neither": int((~lab["content"] & ~lab["market"]).sum()),
+                    "content_weak": int((lab["content"] & ~lab["strong"]).sum()),
+                    "seed_content": kwt.attrs.get("seed_content"), "seed_market": kwt.attrs.get("seed_market"),
+                    "content_dropped_keywords": len(drop)}
+    log(f"콘텐츠 층 {layer_report['content']:,}건 · 자본시장 층 {layer_report['market']:,}건 · 둘 다 {layer_report['both']:,}건")
+    results = {}
+    for key, label in (("content", "콘텐츠·사업"), ("market", "자본시장")):
+        idx = np.flatnonzero(lab[key].to_numpy())
+        sub = arts.iloc[idx].reset_index(drop=True)
+        g = set(sub["gid"])
+        sub_corpus = Corpus(sub, corpus.article_sector[corpus.article_sector["gid"].isin(g)].reset_index(drop=True),
+                            corpus.article_company[corpus.article_company["gid"].isin(g)].reset_index(drop=True),
+                            dict(corpus.report))
+        sub_kw = [kw[i] for i in idx]
+        if key == "content":
+            sub_kw = [[w for w in ws if w not in drop] for ws in sub_kw]
+        log(f"[{label}] 분석")
+        res = analyze(cfg, sub_corpus, sub, [texts[i] for i in idx], [tokens[i] for i in idx], sub_kw, lex,
+                      lexicon_path, names, out / key, with_candidates)
+        res["meta"]["layer"] = {"key": key, "label": label, **layer_report}
+        with open(out / key / "radar.json", "w", encoding="utf-8") as f:
+            json.dump(res, f, ensure_ascii=False, default=_jsonable)
+        results[key] = res
+    _finish(results, out)
+    return results
+
+
+def _finish(results: dict, out: Path) -> None:
+    from .report import write_html
+    write_html(results, out / "radar.html")
+    log(f"완료 → {out / 'radar.html'}")
+
+
+def analyze(cfg: dict, corpus: Corpus, arts: pd.DataFrame, texts: list[str], tokens: list, kw: list[list[str]],
+            lex: Lexicon, lexicon_path: str | None, names: list[str], out: Path, with_candidates: bool) -> dict:
+    """한 층(또는 전체)의 기사에 대해 지표·네트워크·트렌드를 계산한다."""
+    out.mkdir(parents=True, exist_ok=True)
+    companies = sorted(corpus.article_company["company"].unique())
     dt = DocTerm(kw, cfg["keywords"]["min_df"])
-    log(f"어휘 {len(dt.vocab):,}개")
+    log(f"기사 {len(arts):,}건 · 어휘 {len(dt.vocab):,}개")
 
     ktab, series = keyword_table(dt, arts)
     win = make_windows(arts, cfg)
@@ -346,9 +421,6 @@ def run(cfg: dict, input_paths: list[str] | None = None, lexicon_path: str | Non
 
     with open(out / "radar.json", "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, default=_jsonable)
-    from .report import write_html
-    write_html(result, out / "radar.html")
-    log(f"완료 → {out / 'radar.html'}")
     return result
 
 
@@ -419,7 +491,7 @@ def assemble(cfg, corpus, arts, win, dt, st, stx, profiles, dif, sectors, net_al
     converging = pick(st["Converging"], "ratio", 30)
     # 기사가 많은(산업적으로 중요한) 키워드부터. 겹침 순으로 두면 맥락이 흐린 일반어가 앞에 온다
     s_idx = stru[stru["structural_change"]].sort_values("recent_df", ascending=False)
-    structural = [w for w in s_idx.index if w in prof][:100]
+    structural = [w for w in s_idx.index if w in prof][:60]
 
     def conv_table(sc):
         S = len(sc["sectors"])

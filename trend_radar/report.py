@@ -37,7 +37,7 @@ def _art_ids(o, out: set) -> None:
             _art_ids(v, out)
 
 
-def _slim(result: dict, top_profiles: int = 300) -> dict:
+def _slim(result: dict, top_profiles: int = 150) -> dict:
     """화면에 필요한 만큼만 남긴다 (전체는 radar.json과 tables/에 있다).
     목록·분야·군집·쌍에 나온 키워드 + 기사 수 상위 키워드의 프로파일만 싣는다."""
     r = dict(result)
@@ -84,9 +84,13 @@ def _slim(result: dict, top_profiles: int = 300) -> dict:
     return r
 
 
-def write_html(result: dict, path: Path) -> None:
+def write_html(results: dict, path: Path) -> None:
+    """results: {층 키: 결과}. 층이 여럿이면 화면 위쪽에서 전환한다."""
     from .pipeline import _jsonable
 
-    data = json.dumps(_slim(result), ensure_ascii=False, default=_jsonable).replace("</", "<\\/")
+    if "meta" in results:  # 단일 결과
+        results = {"all": results}
+    payload = {"layers": {k: _slim(v) for k, v in results.items()}}
+    data = json.dumps(payload, ensure_ascii=False, default=_jsonable).replace("</", "<\\/")
     html = TEMPLATE.read_text(encoding="utf-8").replace("/*__DATA__*/null", data)
     Path(path).write_text(html, encoding="utf-8")

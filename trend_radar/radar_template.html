@@ -43,12 +43,16 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.55 "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; }
 header { padding: 20px 16px 8px; max-width: 1280px; margin: 0 auto; }
+.titlerow { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 4px; }
+.titlerow h1 { margin: 0; }
+#layerSeg button { font-size: 13px; padding: 6px 14px; }
+#layerNote { margin-bottom: 2px; }
 h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
 h2 { font-size: 17px; margin: 0 0 4px; }
 h3 { font-size: 14px; margin: 16px 0 6px; color: var(--text-2); font-weight: 600; }
 .sub { color: var(--text-2); font-size: 13px; }
 .muted { color: var(--muted); }
-nav { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
+nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
 nav .inner { max-width: 1280px; margin: 0 auto; padding: 0 16px; display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; }
 nav button { flex: none; border: 0; background: none; color: var(--text-2); padding: 10px 12px; font: inherit; font-size: 13px; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
 nav button.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
@@ -99,7 +103,7 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space:
 .art a:hover { color: var(--accent-ink); text-decoration: underline; }
 .art .m { font-size: 12px; color: var(--muted); }
 .art .s { font-size: 12px; color: var(--text-2); margin-top: 2px; }
-#panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(640px, 100vw); background: var(--surface); border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgba(0,0,0,.12); transform: translateX(100%); transition: transform .18s; z-index: 20; overflow-y: auto; }
+#panel { position: fixed; top: 0; right: 0; bottom: 0; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); width: min(640px, 100vw); background: var(--surface); border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgba(0,0,0,.12); transform: translateX(100%); transition: transform .18s; z-index: 20; overflow-y: auto; }
 #panel.open { transform: none; }
 #panel .ph { position: sticky; top: 0; background: var(--surface); padding: 14px 16px 10px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; z-index: 2; }
 #panel .pb { padding: 12px 16px 40px; }
@@ -135,22 +139,41 @@ ul.ev li { margin: 2px 0; }
 </head>
 <body>
 <header>
-  <h1>콘텐츠산업 Trend Radar</h1>
+  <div class="titlerow"><h1>콘텐츠산업 Trend Radar</h1><div class="seg" id="layerSeg"></div></div>
+  <div class="sub" id="layerNote"></div>
   <div class="sub" id="metaLine"></div>
 </header>
 <nav><div class="inner" id="tabs"></div></nav>
 <main id="main"></main>
 <aside id="panel" aria-hidden="true"><div class="ph"><div id="panelHead"></div><button class="close" id="panelClose">닫기</button></div><div class="pb" id="panelBody"></div></aside>
 <script>
-const D = /*__DATA__*/null;
+const ALL = /*__DATA__*/null;
+let D, P, M, S, layer;
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pct = (x, d = 2) => x == null ? "–" : (x * 100).toFixed(d) + "%";
 const fx = (x, d = 1) => x == null || !isFinite(x) ? "–" : Number(x).toFixed(d);
-const P = D.profiles, M = D.meta, S = M.sectors;
+
 const STATUS_KO = {"Emerging":"부상","Growing":"성장","Established":"정착","Spreading":"확산","Converging":"융합","Declining":"쇠퇴","Event-driven":"이벤트성"};
 
+const LAYER_NOTE = {
+  content: "작품·서비스·IP·플랫폼·공연·기술·이용자 이야기가 중심인 기사. 기업이 스쳐 간 업계 동향 기사도 콘텐츠 성향이 뚜렷하면 포함합니다. 주가·실적·공시 어휘는 이 층에서 뺐습니다.",
+  market: "주가·실적·공시·지분·주주환원이 중심이고 기업이 주인공인 기사. 종목 나열·시황·인용 기사는 뺐습니다.",
+  all: "",
+};
+function setLayer(k) {
+  layer = k; D = ALL.layers[k]; P = D.profiles; M = D.meta; S = M.sectors;
+  curSector = S[0];
+  const keys = Object.keys(ALL.layers);
+  $("#layerSeg").innerHTML = keys.length > 1 ? keys.map(x => `<button data-layer="${x}" class="${x === k ? "on" : ""}">${esc(ALL.layers[x].meta.layer ? ALL.layers[x].meta.layer.label : "전체")}</button>`).join("") : "";
+  const L = M.layer;
+  $("#layerNote").innerHTML = L ? `<b>${esc(L.label)} 층</b> · ${LAYER_NOTE[k] || ""}` : "";
+  renderMeta();
+  try { localStorage.setItem("radar-layer", k); } catch (e) {}
+}
+function renderMeta() {
 $("#metaLine").innerHTML = `기사 ${M.articles.toLocaleString()}건 · ${M.date_min} ~ ${M.date_max} · 키워드 ${M.vocab.toLocaleString()}개 · 최근 구간 ${M.recent_q.join("~")} vs 직전 ${M.base_q[0]}~${M.base_q.at(-1)} · 정제 규칙 ${D.lexicon.stopwords}/${D.lexicon.synonyms}/${D.lexicon.compounds} (불용어/동의어/복합어, ${esc(D.lexicon.path)})`;
+}
 
 function tagsHtml(p) {
   const st = (p.status || []).map(s => `<span class="tag ${s}" title="${s}">${STATUS_KO[s] || s}</span>`).join("");
@@ -217,7 +240,7 @@ function clusterCard(c, chg) {
     ${change}<div class="kws">${kws}</div><details><summary class="muted">대표 기사</summary>${arts}</details></div>`;
 }
 
-let curSector = S[0];
+let curSector = null;
 render.sector = () => {
   const opts = S.map(s => `<option ${s === curSector ? "selected" : ""}>${esc(s)}</option>`).join("");
   const d = D.sectors[curSector];
@@ -351,7 +374,13 @@ render.review = () => {
     <div class="stats" style="margin:8px 0 12px">
       <div class="stat"><div class="k">원자료 행</div><div class="v">${c.raw_rows.toLocaleString()}</div></div>
       <div class="stat"><div class="k">기업명 실제 등장 행</div><div class="v">${c.rows_company_mentioned.toLocaleString()}</div></div>
-      <div class="stat"><div class="k">분석 기사 (전역기사ID)</div><div class="v">${c.articles.toLocaleString()}</div></div>
+      ${c.rows_company_strong != null ? `<div class="stat"><div class="k">기업이 주인공인 행 (제목 또는 2회 이상)</div><div class="v">${c.rows_company_strong.toLocaleString()}</div></div>` : ""}
+      ${M.layer ? `<div class="stat"><div class="k">정제 후 전체 기사</div><div class="v">${M.layer.articles.toLocaleString()}</div></div>
+      <div class="stat"><div class="k">콘텐츠·사업 층</div><div class="v">${M.layer.content.toLocaleString()}</div></div>
+      <div class="stat"><div class="k">자본시장 층</div><div class="v">${M.layer.market.toLocaleString()}</div></div>
+      <div class="stat"><div class="k">두 층 모두</div><div class="v">${M.layer.both.toLocaleString()}</div></div>
+      <div class="stat"><div class="k">어느 층도 아님 (분석 제외)</div><div class="v">${M.layer.neither.toLocaleString()}</div></div>` : ""}
+      <div class="stat"><div class="k">이 층 분석 기사</div><div class="v">${M.articles.toLocaleString()}</div></div>
       <div class="stat"><div class="k">반복 안내문 조각 제거</div><div class="v">${(c.boilerplate_segment_count || 0).toLocaleString()}</div></div>
       <div class="stat"><div class="k">제외 태그로 뺀 기사</div><div class="v">${(c.excluded_by_title_tag || 0).toLocaleString()}</div></div>
     </div>
@@ -439,6 +468,7 @@ function show(t) {
 }
 document.addEventListener("click", e => {
   const t = e.target.closest("[data-t]"); if (t) return show(t.dataset.t);
+  const ly = e.target.closest("[data-layer]"); if (ly) { $("#panelClose").click(); setLayer(ly.dataset.layer); return show(cur); }
   const k = e.target.closest("[data-k]"); if (k && P[k.dataset.k]) return openKw(k.dataset.k);
   const u = e.target.closest("[data-u]"); if (u) { convUnit = u.dataset.u; return show("conv"); }
   const em = e.target.closest("[data-e]"); if (em) { emTab = em.dataset.e; return show("emerging"); }
@@ -456,6 +486,9 @@ document.addEventListener("change", e => {
 document.addEventListener("input", e => {
   if (e.target.id === "exploreIn") { exploreQ = e.target.value; const pos = e.target.selectionStart; show("explore"); const i = $("#exploreIn"); i.focus(); i.setSelectionRange(pos, pos); }
 });
+let firstLayer = Object.keys(ALL.layers)[0];
+try { const l = localStorage.getItem("radar-layer"); if (l && ALL.layers[l]) firstLayer = l; } catch (e) {}
+setLayer(firstLayer);
 show(cur);
 </script>
 </body>

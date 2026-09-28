@@ -121,8 +121,20 @@ def build_corpus(raw: pd.DataFrame, cfg: dict) -> Corpus:
     # 기업 등장 여부 (행 단위: 이 기업으로 검색된 기사에 이 기업이 실제로 나오는가)
     pats = company_patterns(sorted(df["company"].unique()), clean.get("company_aliases") or {})
     text = df["title"] + " " + df["summary"]
-    df["mentioned"] = [bool(pats[c].search(t)) for c, t in zip(df["company"], text)]
+    # 기업이 기사의 주인공인가: 제목에 나오거나 요약에 min_summary_mentions번 이상 나와야 한다.
+    # 요약에 한 번 스쳐 가는 경우(종목 나열, 시황, "○○에 따르면" 인용, 언론사 바이라인)는 뺀다.
+    rule = clean.get("mention_rule", "title_or_repeat")
+    min_rep = clean.get("min_summary_mentions", 2)
+    in_title = [bool(pats[c].search(t)) for c, t in zip(df["company"], df["title"])]
+    n_sum = [len(pats[c].findall(t)) for c, t in zip(df["company"], df["summary"])]
+    df["mention_title"] = in_title
+    df["mention_count"] = n_sum
+    # 한 번이라도 나오면 남기되, 주인공 여부(strong)를 기록한다. 스쳐 간 기사(weak)를 어느 층에 쓸지는 layers.py가 정한다.
+    df["mentioned"] = [a or b > 0 for a, b in zip(in_title, n_sum)]
+    df["strong"] = [a or b >= min_rep for a, b in zip(in_title, n_sum)] if rule != "any" else df["mentioned"]
+    rep["mention_rule"] = rule
     rep["rows_company_mentioned"] = int(df["mentioned"].sum())
+    rep["rows_company_strong"] = int((df["mentioned"] & df["strong"]).sum())
     by_co = df.groupby("company")["mentioned"].agg(["size", "mean"]).rename(columns={"size": "rows", "mean": "mention_rate"})
     rep["company_mention"] = by_co.sort_values("mention_rate").reset_index().to_dict("records")
     if clean.get("require_company_mention", True):
@@ -141,6 +153,7 @@ def build_corpus(raw: pd.DataFrame, cfg: dict) -> Corpus:
     first = df.sort_values(["gid", "date"]).drop_duplicates("gid", keep="first")
     arts = first[["gid", "date", "title", "summary", "press", "link"]].copy()
     arts = arts.merge(df.groupby("gid")["company"].agg(lambda s: sorted(set(s))).rename("companies"), on="gid")
+    arts = arts.merge(df.groupby("gid")["strong"].any().rename("strong"), on="gid")
     arts = arts.merge(a_sec.groupby("gid")["sector"].agg(lambda s: sorted(set(s))).rename("sectors"), on="gid", how="left")
     arts["sectors"] = arts["sectors"].apply(lambda v: v if isinstance(v, list) else [])
     arts = arts.sort_values(["date", "gid"]).reset_index(drop=True)
