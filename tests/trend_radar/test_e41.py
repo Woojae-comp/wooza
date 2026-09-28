@@ -47,11 +47,11 @@ def test_node_types_proper_noun_split_by_specificity():
 
     dic = _dic([("LG전자", "개념", "EXTENDED", 0.3, 200), ("김범수", "개념", "EXTENDED", 3.0, 150),
                 ("박진영", "개념", "EXTENDED", 0.8, 120), ("교보증권", "개념", "EXTENDED", 0.1, 90)])
-    nt = node_types(dic, np.array([1.5, 0.5, -2.0, 3.0]), {"증권"}, {}, set(), dic, {}, kiwi=Kiwi())
+    nt = node_types(dic, np.array([2.5, 0.5, 1.0, 3.0]), {"증권"}, {}, set(), dic, {}, kiwi=Kiwi())
     t = dict(zip(nt["keyword"], nt["node_type"]))
     assert t["LG전자"] == "proper_noun_noncontent"      # 형태(NNP) + 콘텐츠 비유의 + 시장 쪽
     assert t["김범수"] == "proper_noun_content"
-    assert t["박진영"] == "proper_noun_content"         # 콘텐츠 특이도가 낮아도 시장 쪽이 아니면 콘텐츠
+    assert t["박진영"] == "proper_noun_content"         # 콘텐츠 특이도가 낮아도 시장 쪽이 유의하지 않으면 콘텐츠
     assert t["교보증권"] == "market_expression"          # 붙여 쓴 복합어의 시장 단어 끝
 
 
@@ -143,3 +143,13 @@ def test_edge_cache_key_and_reuse(tmp_path):
     e1 = cached_edges(tmp_path, key, build)
     e2 = cached_edges(tmp_path, key, build)
     assert len(calls) == 1 and e1.equals(e2)
+
+
+def test_general_words_use_effect_size_not_z():
+    # '사업'은 z가 커도(빈도 때문) 효과 크기가 작으면 일반어, '신작'은 효과 크기가 커서 개념어
+    dic = pd.DataFrame({"keyword": ["사업", "신작"] + [f"w{i}" for i in range(18)], "entity_type": "개념", "class_auto": "CORE",
+                        "z_B_half": [25.0, 20.0] + [3.0] * 18, "delta_B": [0.05, 1.5] + list(np.linspace(0.1, 1.0, 18)),
+                        "doc_freq": [9000, 8000] + list(range(10, 28))})
+    nt = node_types(dic, np.zeros(20), set(), {}, set(), dic, {})
+    t = dict(zip(nt["keyword"], nt["node_type"]))
+    assert t["사업"] == "general_low_specificity" and t["신작"] == "concept"

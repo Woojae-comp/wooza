@@ -47,17 +47,32 @@ def contains_word(term: str, words: set[str]) -> bool:
     return bool(set(term.split(" ")) & words) or t in words or any(len(x) >= 2 and t.endswith(x) for x in words)
 
 
+def log_odds_delta(X, w_rel: np.ndarray, w_irr: np.ndarray, alpha0: float = 1000.0) -> np.ndarray:
+    """가중 로그오즈의 효과 크기 (z의 분자). z는 빈도가 클수록 커지므로 '흔하지만 특이하지 않은 말'은 효과 크기로 본다."""
+    y_i = np.asarray(X.T @ w_rel).ravel()
+    y_j = np.asarray(X.T @ w_irr).ravel()
+    n_i, n_j = y_i.sum(), y_j.sum()
+    pool = y_i + y_j
+    a = alpha0 * pool / max(pool.sum(), 1e-9) + 1e-3
+    a0 = a.sum()
+    return np.log((y_i + a) / (n_i + a0 - y_i - a)) - np.log((y_j + a) / (n_j + a0 - y_j - a))
+
+
 def node_types(dic: pd.DataFrame, z_market: np.ndarray, market_words: set[str], company_sectors: dict[str, set[str]],
                core_sectors: set[str], ref: pd.DataFrame, rules: dict, kiwi=None) -> pd.DataFrame:
-    """dic: 행렬 어휘 순서의 사전 (keyword, entity_type, z_B_half, doc_freq). ref: 분위수 기준 (네트워크 후보 개념어).
-    증권·시세: 시장 단어 포함, 또는 시장 앵커 z ≥ 1.96 이면서 시장 쪽이 콘텐츠 특이도보다 큼 (z_market ≥ z_B).
-    고유명사: 콘텐츠 특이도 비유의 ∩ 시장 쪽으로 기움(z_market > 0)일 때만 비콘텐츠 (아이유·작품명은 콘텐츠, LG전자는 비콘텐츠)."""
+    """dic: 행렬 어휘 순서의 사전 (keyword, entity_type, z_B_half, doc_freq, 선택: delta_B). ref: 분위수 기준 (네트워크 후보 개념어).
+    순서: entity_type → 시장 단어 포함 → 고유명사(NNP) → 시장 앵커 z → 저특이도 일반어 → 개념어.
+    - 고유명사: 콘텐츠 특이도 비유의(z_B < 1.96) 이면서 시장 앵커 쪽으로 유의(z_market ≥ 1.96)일 때만 비콘텐츠
+    - 증권·시세: 시장 앵커 z ≥ 1.96 이면서 z_market ≥ z_B
+    - 저특이도 일반어: 효과 크기(delta_B) 하위 50% ∩ 문서빈도 상위 10% (z는 빈도에 비례해 커지므로 효과 크기로 본다)"""
     from .text import token_form
 
     zB = dic["z_B_half"].fillna(0).to_numpy()
+    eff = dic["delta_B"].fillna(0).to_numpy() if "delta_B" in dic else zB
     c_ref = ref[ref["entity_type"] == "개념"]
-    zr, dr = np.sort(c_ref["z_B_half"].to_numpy()), np.sort(c_ref["doc_freq"].to_numpy())
-    zp = np.searchsorted(zr, zB, side="right") / max(len(zr), 1)
+    er = np.sort((c_ref["delta_B"] if "delta_B" in c_ref else c_ref["z_B_half"]).fillna(0).to_numpy())
+    dr = np.sort(c_ref["doc_freq"].fillna(0).to_numpy())
+    ep = np.searchsorted(er, eff, side="right") / max(len(er), 1)
     dp = np.searchsorted(dr, dic["doc_freq"].fillna(0).to_numpy(), side="right") / max(len(dr), 1)
     out, why = [], []
     for k, (t, et) in enumerate(zip(dic["keyword"], dic["entity_type"])):
@@ -73,23 +88,25 @@ def node_types(dic: pd.DataFrame, z_market: np.ndarray, market_words: set[str], 
         if et == "작품·개체":
             out.append("work_person_policy"); why.append("작품·인물·정책명 (보호 개체)")
             continue
-        if contains_word(t, market_words) or (z_market[k] >= Z_SIG and z_market[k] >= zB[k]):
-            out.append("market_expression")
-            why.append("시장 단어 포함" if contains_word(t, market_words) else f"시장 앵커 z={z_market[k]:.1f}")
+        if contains_word(t, market_words):
+            out.append("market_expression"); why.append("시장 단어 포함")
             continue
         if kiwi is not None and has_nnp(t, kiwi):
-            if zB[k] < Z_SIG and z_market[k] > 0:
-                out.append("proper_noun_noncontent"); why.append(f"고유명사, 콘텐츠 비유의·시장 쪽 z={z_market[k]:.1f}")
+            if zB[k] < Z_SIG and z_market[k] >= Z_SIG:
+                out.append("proper_noun_noncontent"); why.append(f"고유명사, 콘텐츠 비유의·시장 앵커 z={z_market[k]:.1f}")
             else:
                 out.append("proper_noun_content"); why.append("고유명사")
             continue
-        if zp[k] < rules.get("general_max_z_pct", 0.5) and dp[k] >= rules.get("general_min_df_pct", 0.9):
-            out.append("general_low_specificity"); why.append(f"B 특이도 백분위 {zp[k]:.2f}, 문서빈도 백분위 {dp[k]:.2f}")
+        if z_market[k] >= Z_SIG and z_market[k] >= zB[k]:
+            out.append("market_expression"); why.append(f"시장 앵커 z={z_market[k]:.1f} ≥ 콘텐츠 z={zB[k]:.1f}")
+            continue
+        if ep[k] < rules.get("general_max_z_pct", 0.5) and dp[k] >= rules.get("general_min_df_pct", 0.9):
+            out.append("general_low_specificity"); why.append(f"효과 크기 백분위 {ep[k]:.2f}, 문서빈도 백분위 {dp[k]:.2f}")
             continue
         out.append("concept"); why.append("")
     r = pd.DataFrame({"keyword": dic["keyword"], "entity_type": dic["entity_type"], "class_auto": dic["class_auto"],
-                      "node_type": out, "reason": why, "z_B_half": zB.round(3), "z_market": np.round(z_market, 3),
-                      "doc_freq": dic["doc_freq"]})
+                      "node_type": out, "reason": why, "z_B_half": zB.round(3), "delta_B": np.round(eff, 4),
+                      "z_market": np.round(z_market, 3), "doc_freq": dic["doc_freq"]})
     r["concept_keep"] = r["node_type"].isin(CONCEPT_KEEP)
     r["extended_keep"] = r["node_type"].isin(EXT_KEEP)
     return r
@@ -351,6 +368,8 @@ def run_e41(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
         z_market = weighted_log_odds(X, am, acn)
         market_words = set(cfg["layers"]["market_seed"]) | set(cfg.get("e3", {}).get("market_phrase_words", [])) | lex.stopwords
         cand = dic["class_auto"].isin(["CORE", "EXTENDED", "EMERGING"]).to_numpy()
+        exc_w = (decision == "EXCLUDE").astype(float)
+        dic["delta_B"] = log_odds_delta(X, half, exc_w)             # B Half 효과 크기
         ref = dic[cand]                                              # 분위수 기준 = 네트워크 후보 (DROP·REVIEW 제외)
         nt = node_types(dic, z_market, market_words, company_sectors, core, ref, rules, kiwi=None)
         # 형태소 확인(NNP)은 네트워크 후보(CORE·EXTENDED·EMERGING)에만 적용
