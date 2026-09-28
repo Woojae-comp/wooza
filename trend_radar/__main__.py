@@ -34,6 +34,9 @@ def main() -> None:
     e41 = sub.add_parser("e41", help="E4.1: 문서 군집 보완 (A Leiden 기사 배정 / B LSA K-means / C 분야별 층화 + 계층형 주제)")
     e41.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
     e41.add_argument("--out", default="out")
+    e42 = sub.add_parser("e42", help="E4.2: 주제 구조 확정 (LSA100 K120 + Leiden 해석 + 층화 복구) → 07c_topic_registry.csv")
+    e42.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
+    e42.add_argument("--out", default="out")
     e5 = sub.add_parser("e5", help="E5a: 키워드 시계열 신호 실험 (trend 아님) → 06a_keyword_signal.csv")
     e5.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
     e5.add_argument("--out", default="out")
@@ -65,6 +68,19 @@ def main() -> None:
         cfg["_input_files"] = files
         s = run_e41(cfg, read_raw(files), Path(a.out))
         print(json.dumps({k: v for k, v in s.items() if k not in ("models", "backbones")}, ensure_ascii=False, indent=1, default=str))
+        return
+    if a.cmd == "e42":
+        import json
+        from pathlib import Path
+
+        from .e0 import input_files
+        from .e42 import run_e42
+        from .load import read_raw
+        cfg = load_config()
+        files = input_files(a.input or cfg["input"]["paths"])
+        cfg["_input_files"] = files
+        s = run_e42(cfg, read_raw(files), Path(a.out))
+        print(json.dumps({k: v for k, v in s.items() if k != "networks"}, ensure_ascii=False, indent=1, default=str))
         return
     if a.cmd == "e5":
         import json

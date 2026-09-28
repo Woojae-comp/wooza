@@ -279,3 +279,34 @@ e41:
   policy_min_hits: 2
   # 정책 유형 판정 단어 (주제 유형 표시 전용, 군집 입력에 쓰지 않음)
   policy_words: [규제, 정책, 법, 법안, 개정, 정부, 문체부, 문화체육관광부, 공정위, 공정거래위원회, 과징금, 제재, 국회, 청문회, 진흥, 지원, 등급, 셧다운, 확률형, 저작권, 관세, 한한령, 과세, 세제, 후보자, 장관]
+
+e42:
+  # E4.2 주제 구조 확정 (2026-09-28 사용자 결정). 기본 단위 LSA100 + K-means K=120, Leiden은 해석, 층화는 복구
+  base_dim: 100
+  base_k: 120
+  # 교차 분야 연결어: 낮은 특이도지만 정책·산업 해석에 필요. Leiden 제외, 사전·주제명·확산 지표 사용 (decision_log)
+  generic_bridge: [AI, 플랫폼, 방송]
+  reject_quantile: 0.05       # 군집 내부 중심 유사도 하위 5% = 배정 거부 경계 (민감도: 10%)
+  reject_quantile_alt: 0.10
+  margin_quantile: 0.10       # 1·2위 유사도 차가 학습 기사 하위 10% 미만이면 LOW
+  entity_list_min: 6          # 한 기사에 기업·고유명사 용어 6개 이상 → 종목·기업 나열 기사
+  market_article_dominant: 0.5
+  entity_list_dominant: 0.5
+  external_vs_concept: 0.5    # 외부 기업·종목명 비중이 콘텐츠 개념어 비중의 절반 이상
+  probe_absorption_max: 0.1
+  low_coherence_quantile: 0.10
+  noise_score_max: 0.0        # 잡음 성분 합이 콘텐츠 성분 합보다 크면 잡음
+  sub_silhouette_tolerance: 0.01
+  sub_seed_ari: 0.60
+  sub_min_docs: 30
+  sub_min_share: 0.03
+  sub_coherence_gain: 0.05
+  rescue_max_cosine: 0.35     # K=120 주제 중심과의 최대 코사인이 이 미만
+  rescue_min_docs: 30         # 최소 규모, 일관성은 K=120 주제 중앙값 이상
+  network:
+    topk: 15
+    resolution: 1.4
+    base_min_co: 10
+    base_npmi: 0.20
+    rare_min_co: 5
+    rare_npmi: 0.30
