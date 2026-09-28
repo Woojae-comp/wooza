@@ -86,9 +86,9 @@ def sample_articles(arts: pd.DataFrame, n: int, seed: int = 7) -> pd.DataFrame:
     """분야(첫 분야) × 연도 층화 표본. 칸마다 고르게, 부족하면 남는 칸에서 채운다."""
     a = arts.copy()
     a["stratum"] = a["sectors"].map(lambda s: s[0] if s else "기타") + "|" + a["date"].dt.year.astype(str)
-    groups = a.groupby("stratum")
-    per = max(1, n // groups.ngroups)
-    picked = groups.apply(lambda g: g.sample(min(len(g), per), random_state=seed)).reset_index(drop=True)
+    per = max(1, n // a["stratum"].nunique())
+    rng = np.random.default_rng(seed)
+    picked = a.assign(_r=rng.random(len(a))).sort_values("_r").groupby("stratum").head(per).drop(columns="_r")
     if len(picked) < n:
         rest = a[~a["gid"].isin(picked["gid"])].sample(n - len(picked), random_state=seed)
         picked = pd.concat([picked, rest])
