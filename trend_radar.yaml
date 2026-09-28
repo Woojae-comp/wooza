@@ -204,3 +204,18 @@ e3:
     core_persistence: 0.5
     emerging_growth: 2.0
     emerging_recent_df: 10
+
+e5:
+  # E5a 키워드 시계열 신호 (keyword_signal, trend 아님). 최종 유형은 E4 군집과 결합한 E5b에서 확정
+  input_classes: [CORE, EXTENDED, EMERGING]
+  min_monthly_df: 5            # 월간 가중 문서빈도가 이 미만이면 증가율·Z로 유형을 주지 않음 (Insufficient)
+  emerging_growth: 2.0         # 최근 3개월 평균 대비
+  growing_ratio: 1.3           # 최근 6개월 비중 / 직전 6개월 비중
+  declining_ratio: 0.7
+  established_persistence: 0.9 # 최근 12개월 등장 비율
+  spike_max_months: 2          # 최근 12개월 버스트 상태 개월 수
+  spike_max_persistence: 0.5
+  spike_peak_dominance: 0.5    # 최근 12개월 중 최대 달의 점유
+  sector_min_df: 3
+  cross_min_sectors: 3
+  cross_min_entropy: 0.6
