@@ -135,13 +135,26 @@ def npmi_edges(B: sparse.csr_matrix, w: np.ndarray, min_co: int, min_npmi: float
 # ---------------------------------------------------------------- 캐시 (네트워크 격자·문장 행렬)
 # 키: data_snapshot_id, 사전 버전(E3 run_id), 네트워크 층(노드 집합 해시), 동시출현 단위, 임계값, 상위 k, resolution, 시드
 
-CACHE_VERSION = "e4cache_v1"
+CACHE_VERSION = "e4cache_v2"   # v2: 네트워크 키에 E2 run·기사 가중 해시·노드 유형 버전·네트워크 설정 해시 포함
 
 
 def cache_key(d: dict) -> str:
     import hashlib
 
     return hashlib.sha1(json.dumps({**d, "_v": CACHE_VERSION}, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()[:16]
+
+
+def weight_hash(w: np.ndarray) -> str:
+    """기사 가중치(관련성 판정) 해시. E2가 바뀌면 가중 동시출현·NPMI 캐시를 쓰지 않는다."""
+    import hashlib
+
+    return hashlib.sha1(np.round(np.asarray(w, dtype=float), 6).tobytes()).hexdigest()[:12]
+
+
+def network_key(base_key: dict, e2_run: str, w: np.ndarray, node_type_version: str, network_cfg: dict) -> dict:
+    """네트워크 캐시 키: data_snapshot_id + 사전 버전 + e2_run_id + 기사 가중 해시 + 노드 유형 버전 + 네트워크 설정 해시."""
+    return {**base_key, "e2_run_id": e2_run, "article_weight_hash": weight_hash(w),
+            "node_type_version": node_type_version, "network_config_hash": cache_key(network_cfg)}
 
 
 def nodes_hash(vocab: list[str], nodes) -> str:
@@ -297,7 +310,8 @@ def run_e4(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
     e3_run = latest_run(REGISTRY, "keyword_dictionary")
     e3_dir = out_root / "runs" / e3_run
     from .e3 import latest_e2
-    e2_sum_thr = latest_e2(REGISTRY, out_root)[2]["otsu_threshold"]   # 저관련 군집 기준 = E2 관련성 임계값
+    e2_run_id, _, e2_sum = latest_e2(REGISTRY, out_root)
+    e2_sum_thr = e2_sum["otsu_threshold"]   # 저관련 군집 기준 = E2 관련성 임계값
     lex = Lexicon.load()
 
     # ------------------------------------------------ 입력
@@ -357,7 +371,7 @@ def run_e4(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
                 for min_co in grid.get("min_co", [5, 10]):
                     for thr in grid.get("npmi", [0.10, 0.20]):
                         for topk in grid.get("topk", [15, 20]):
-                            ek = {**base_key, "layer": layer, "nodes": nodes_hash(vocab, nodes), "unit": unit,
+                            ek = {**network_key(base_key, e2_run_id, half, "e4_general_v1", grid), "layer": layer, "nodes": nodes_hash(vocab, nodes), "unit": unit,
                                   "min_co": min_co, "npmi": thr, "topk": topk}
                             e = cached_edges(cache_dir, ek, lambda: npmi_edges(Bl, w, min_co, thr, topk))
                             nets[(layer, unit, min_co, thr, topk)] = e

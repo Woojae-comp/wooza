@@ -106,3 +106,14 @@ def test_content_entities_count_as_content():
     c = noise_components(np.array([0, 1]), np.ones(2), Xd, types, np.zeros(2), np.zeros(2), np.zeros(2))
     assert np.isclose(c["content_share"], 5 / 6) and np.isclose(c["content_concept_share"], 1 / 6)
     assert "GENERIC_WORD_DOMINANT" not in noise_reasons(c, 0.8, 0.3, 0.0, RULES, 0.49, 0.05)
+
+
+def test_network_cache_key_changes_with_e2_weights():
+    from trend_radar.e4 import cache_key, network_key
+
+    base = {"data_snapshot_id": "ds_x", "dictionary": "run_e3"}
+    k1 = network_key(base, "run_e2a", np.array([1.0, 0.5, 0.0]), "nt1", {"topk": 15})
+    assert cache_key(k1) != cache_key(network_key(base, "run_e2a", np.array([1.0, 0.0, 0.0]), "nt1", {"topk": 15}))  # 가중 변경
+    assert cache_key(k1) != cache_key(network_key(base, "run_e2b", np.array([1.0, 0.5, 0.0]), "nt1", {"topk": 15}))  # E2 run
+    assert cache_key(k1) != cache_key(network_key(base, "run_e2a", np.array([1.0, 0.5, 0.0]), "nt2", {"topk": 15}))  # 노드 유형
+    assert cache_key(k1) != cache_key(network_key(base, "run_e2a", np.array([1.0, 0.5, 0.0]), "nt1", {"topk": 20}))  # 설정

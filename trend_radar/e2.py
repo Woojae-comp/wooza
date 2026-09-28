@@ -66,9 +66,58 @@ def anchors(arts: pd.DataFrame, sid: pd.Series, min_articles: int = 3, min_conc:
     return out, info
 
 
-# ---------------------------------------------------------------- 라벨 함수 (학습 전용, 앵커 규칙과 겹치지 않음)
+# ---------------------------------------------------------------- E2.1 잡음 유입 보정 라벨 함수 (EXCLUDE 방향 투표, 강제 제외 아님)
 
-def labeling_functions(arts: pd.DataFrame, kw: list[list[str]], lab: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+SOURCE_SUFFIX = r"(?:\s*(?:뉴스\w*|라디오|인터뷰|기자|캡처|캡쳐|화면|방송\s*화면|제공|자료|보도|취재|앵커|출연|유튜브|채널|Biz|FM|8뉴스))"
+
+
+def strip_source_mentions(text: str, names: list[str]) -> str:
+    """방송사명이 출처로만 쓰인 자리를 지운다: [말머리], 'B 라디오/뉴스/기자/캡처/제공…', (서울=B), (B), ⓒB, B '프로그램명'."""
+    t = re.sub(r"\[[^\]]{0,30}\]", " ", text or "")
+    for n in names:
+        e = re.escape(n)
+        t = re.sub(rf"\(\s*(?:[가-힣]{{1,3}}\s*=\s*)?{e}\s*\)", " ", t)
+        t = re.sub(rf"ⓒ\s*{e}", " ", t)
+        t = re.sub(rf"{e}{SOURCE_SUFFIX}", " ", t)
+        t = re.sub(rf"{e}\s*[<‘'\"“《〈][^>’'\"”》〉]{{1,30}}[>’'\"”》〉]", " ", t)
+    return t
+
+
+def lf_broadcaster_source_only(arts: pd.DataFrame, broadcasters: dict[str, list[str]], topic_words: set[str],
+                               anchor_content: np.ndarray) -> np.ndarray:
+    """방송사명이 출처(말머리·바이라인·상투 문구)로만 등장 ∩ 콘텐츠 앵커 없음 ∩ 방송사·프로그램·산업이 주제가 아님 → EXCLUDE 방향.
+    broadcasters: 기업명 → 표기 목록 (별칭 포함). 해당 방송사가 검색 기업인 기사에만 적용."""
+    out = np.zeros(len(arts), dtype=int)
+    for i, (title, summ, cos, anc) in enumerate(zip(arts["title"], arts["summary"], arts["companies"], anchor_content)):
+        hit = [c for c in cos if c in broadcasters]
+        if not hit or anc:
+            continue
+        names = sorted({x for c in hit for x in broadcasters[c]}, key=len, reverse=True)
+        raw_text = f"{title} {summ}"
+        rest = strip_source_mentions(raw_text, names)
+        if any(n in rest for n in names):
+            continue                                   # 출처가 아닌 자리에도 등장 → 방송사가 기사 대상
+        if any(w in rest for w in topic_words):
+            continue                                   # 방송·콘텐츠·산업 주제어 → 기권
+        out[i] = NEG
+    return out
+
+
+def lf_politics_society_section(sid: np.ndarray, anchor_content: np.ndarray, texts: list[str], policy_words: set[str],
+                                sections: set[str]) -> np.ndarray:
+    """네이버 정치(100)·사회(102) 섹션 ∩ 콘텐츠 앵커 없음 ∩ 콘텐츠·방송·저작권·플랫폼 정책어 없음 → EXCLUDE 방향.
+    섹션 코드가 없으면 기권."""
+    has_sec = np.array([isinstance(x, str) and x in sections for x in sid])
+    policy = np.array([any(w in t for w in policy_words) for t in texts])
+    return np.where(has_sec & ~anchor_content.astype(bool) & ~policy, NEG, ABSTAIN)
+
+
+# ---------------------------------------------------------------- 라벨 함수 (학습 전용)
+# 기존 8개는 앵커 규칙과 겹치지 않는다. E2.1 규칙 2개는 사용자 결정으로 콘텐츠 앵커를 '기권 조건'으로만 쓴다
+# (앵커 기사에는 투표하지 않음 → 콘텐츠 앵커 포착률은 이 규칙으로 직접 떨어질 수 없음. 평가 해석 시 주의).
+
+def labeling_functions(arts: pd.DataFrame, kw: list[list[str]], lab: pd.DataFrame, cfg: dict,
+                       anc: pd.DataFrame | None = None) -> pd.DataFrame:
     lc = cfg["layers"]
     cseed, mseed = set(lc["content_seed"]), set(lc["market_seed"])
     sets = [set(w) for w in kw]
@@ -90,6 +139,15 @@ def labeling_functions(arts: pd.DataFrame, kw: list[list[str]], lab: pd.DataFram
         "LF_other_industry": np.where((o >= 2) & (c == 0), NEG, ABSTAIN),
         "LF_related_tier_no_content": np.where(related & (c < 2), NEG, ABSTAIN),
     }
+    r = cfg.get("e2", {})
+    if anc is not None and r.get("noise_lfs", True):
+        ac = anc["anchor_content"].to_numpy().astype(bool)
+        bro = {k: list(v) for k, v in (r.get("broadcasters") or {}).items()}
+        topic = set(r.get("broadcast_topic_words", [])) | cseed
+        texts = [f"{t} {s_}" for t, s_ in zip(arts["title"], arts["summary"])]
+        L["LF_broadcaster_source_only"] = lf_broadcaster_source_only(arts, bro, topic, ac)
+        L["LF_politics_society_section"] = lf_politics_society_section(
+            anc["sid"].to_numpy(), ac, texts, set(r.get("policy_anchor_words", [])), set(r.get("excluded_sections", ["100", "102"])))
     return pd.DataFrame(L)
 
 
@@ -194,6 +252,55 @@ def kappa(a: np.ndarray, b: np.ndarray) -> float:
     return float((po - pe) / (1 - pe)) if pe < 1 else 1.0
 
 
+def mcnemar_p(before: np.ndarray, after: np.ndarray) -> float:
+    """짝지은 이진 판정 변화의 McNemar 정확 검정 (양측)."""
+    from scipy.stats import binomtest
+
+    b = int((before & ~after).sum())
+    c = int((~before & after).sum())
+    return float(binomtest(b, b + c, 0.5).pvalue) if b + c else 1.0
+
+
+def change_report(prev: pd.DataFrame, new: pd.DataFrame, arts: pd.DataFrame, article_sector: pd.DataFrame,
+                  anc: pd.DataFrame, texts: list[str], rules: dict) -> tuple[dict, dict[str, pd.DataFrame]]:
+    """이전 E2 대비 변화 (사용자 통과 기준). 판정은 INCLUDE+REVIEW = 유입(in)."""
+    m = pd.DataFrame({"gid": arts["gid"].to_numpy()}).merge(prev[["gid", "decision"]], on="gid", how="left") \
+        .merge(new[["gid", "decision"]], on="gid", suffixes=("_prev", "_new"))
+    m["prev_in"] = m["decision_prev"].isin(["INCLUDE", "REVIEW"])
+    m["new_in"] = m["decision_new"].isin(["INCLUDE", "REVIEW"])
+    sid = anc["sid"].to_numpy()
+    probe_w = rules.get("politics_probe_words", [])
+    probe = np.array([any(w in t for w in probe_w) for t in texts]) | np.isin(sid, list(rules.get("excluded_sections", ["100", "102"])))
+    policy = np.array([any(w in t for w in rules.get("policy_anchor_words", [])) for t in texts])
+    ac = anc["anchor_content"].to_numpy().astype(bool)
+
+    def rate(mask, col):
+        return round(float(m.loc[mask, col].mean()), 4) if mask.any() else None
+
+    pin, nin = m["prev_in"].to_numpy(), m["new_in"].to_numpy()
+    sec = article_sector.merge(m[["gid", "prev_in", "new_in"]], on="gid")
+    by_sec = sec.groupby("sector")[["prev_in", "new_in"]].sum()
+    by_sec["change_rate"] = (by_sec["new_in"] / by_sec["prev_in"].clip(lower=1) - 1).round(4)
+    pol_to_exc = policy & pin & (m["decision_new"] == "EXCLUDE").to_numpy()
+    out = {
+        "politics_probe": {"articles": int(probe.sum()), "in_rate_prev": rate(probe, "prev_in"), "in_rate_new": rate(probe, "new_in"),
+                           "mcnemar_p": mcnemar_p(pin[probe], nin[probe])},
+        "content_anchor": {"articles": int(ac.sum()),
+                           "include_rate_prev": round(float((m.loc[ac, "decision_prev"] == "INCLUDE").mean()), 4),
+                           "include_rate_new": round(float((m.loc[ac, "decision_new"] == "INCLUDE").mean()), 4),
+                           "in_rate_prev": rate(ac, "prev_in"), "in_rate_new": rate(ac, "new_in"),
+                           "note": "E2.1 규칙은 콘텐츠 앵커 기사에 투표하지 않으므로 직접 영향은 없다 (간접 영향만 측정)"},
+        "policy_articles": {"articles": int(policy.sum()), "moved_in_to_exclude": int(pol_to_exc.sum()),
+                            "rate": round(float(pol_to_exc.sum() / max((policy & pin).sum(), 1)), 4)},
+        "sector_change_rate": by_sec["change_rate"].to_dict(),
+        "all_in_prev": int(pin.sum()), "all_in_new": int(nin.sum()),
+    }
+    trans = pd.crosstab(m["decision_prev"], m["decision_new"])
+    moved = m[pin & ~nin].merge(arts[["gid", "title"]], on="gid")
+    pol = m[pol_to_exc].merge(arts[["gid", "title"]], on="gid")
+    return out, {"transition": trans, "sector": by_sec.reset_index(), "moved_out": moved.head(2000), "policy_to_exclude": pol}
+
+
 def run_e2(cfg: dict, raw: pd.DataFrame, out_root: Path, llm_dir: Path | None = None, bootstrap: int = 5) -> dict:
     from .config import Lexicon
     from .layers import classify
@@ -225,7 +332,7 @@ def run_e2(cfg: dict, raw: pd.DataFrame, out_root: Path, llm_dir: Path | None = 
         st["rows_out"] = int(anc_info["anchor_content"] + anc_info["anchor_market"])
 
     with run.stage("weak_supervision") as st:
-        L = labeling_functions(arts, kw, lab, cfg)
+        L = labeling_functions(arts, kw, lab, cfg, anc)
         p_lm, lf_stats = label_model(L)
         X, fnames = features(arts.assign(content_score=lab["content_score"].to_numpy(),
                                          market_score=lab["market_score"].to_numpy(),
@@ -292,7 +399,22 @@ def run_e2(cfg: dict, raw: pd.DataFrame, out_root: Path, llm_dir: Path | None = 
         run.artifact(rep, "e2_report")
         st["rows_out"] = len(out)
 
+    change = None
+    prev_recs = [json.loads(l) for l in (REGISTRY / "experiment_registry.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
+    prev_recs = [r for r in prev_recs if r.get("task") == "article_relevance"]
+    if prev_recs:
+        prev_path = out_root / "runs" / prev_recs[-1]["run_id"] / "02_article_relevance.parquet"
+        if prev_path.exists():
+            texts_ = [f"{t} {s_}" for t, s_ in zip(arts["title"], arts["summary"])]
+            change, tabs = change_report(pd.read_parquet(prev_path), out, arts, corpus.article_sector, anc, texts_, cfg.get("e2", {}))
+            change["prev_run_id"] = prev_recs[-1]["run_id"]
+            with pd.ExcelWriter(run.dir / "e2_change_vs_prev.xlsx") as xw:
+                for k, v in tabs.items():
+                    v.to_excel(xw, sheet_name=k, index=k == "transition")
+            run.artifact(run.dir / "e2_change_vs_prev.xlsx", "e2_change_vs_prev")
+
     summary = {
+        "change_vs_prev": change,
         "anchors": {k: v for k, v in anc_info.items() if k != "top_work_names"},
         "label_model_prior": round(lf_stats.attrs["prior"], 3),
         "ws_train_confident": n_train, "otsu_threshold": round(t, 3),

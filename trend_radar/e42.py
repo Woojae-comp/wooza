@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 
-from .e4 import cached_edges, cached_leiden, community_metrics, nodes_hash, npmi_coherence, npmi_edges, tfidf
+from .e4 import network_key, cached_edges, cached_leiden, community_metrics, nodes_hash, npmi_coherence, npmi_edges, tfidf
 from .e41 import (CONCEPT_KEEP, EXT_KEEP, community_matrix, contains_word, log_odds_delta, lsa, lsa_kmeans, node_types,
                   sector_capture, sector_weights, seed_agreement, topic_top_terms)
 
@@ -291,7 +291,8 @@ def run_e42(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
             nodes = concept_nodes if layer == "concept" else ext_nodes
             B, uw = units[unit]
             Bl = B[:, nodes].tocsr()
-            mk = lambda mc, thr: {**base_key, "layer": layer, "nodes": nodes_hash(vocab, nodes), "unit": unit,
+            nkey = network_key(base_key, e2_run, half, nodes_hash(nt["node_type"].tolist(), range(len(nt))), net)
+            mk = lambda mc, thr: {**nkey, "layer": layer, "nodes": nodes_hash(vocab, nodes), "unit": unit,
                                   "min_co": mc, "npmi": thr, "topk": topk}
             kb = mk(net.get("base_min_co", 10), net.get("base_npmi", 0.20))
             e = cached_edges(cache_dir, kb, lambda: npmi_edges(Bl, uw, kb["min_co"], kb["npmi"], topk))

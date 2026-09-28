@@ -26,7 +26,7 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 
-from .e4 import (cached_edges, cached_leiden, centroid_similarity, community_metrics, nodes_hash, npmi_coherence, npmi_edges, pct,
+from .e4 import (cached_edges, cached_leiden, network_key, centroid_similarity, community_metrics, nodes_hash, npmi_coherence, npmi_edges, pct,
                  sentence_matrix, tfidf)
 
 Z_SIG = 1.96
@@ -452,7 +452,7 @@ def run_e41(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
                 Bl = B[:, nodes].tocsr()
                 edges = {}
                 for name, (mc, thr) in bb.items():
-                    ek = {**base_key, "layer": layer, "nodes": nodes_hash(vocab, nodes), "unit": unit, "min_co": mc, "npmi": thr, "topk": topk}
+                    ek = {**network_key(base_key, e2_run, half, nodes_hash(nt["node_type"].tolist(), range(len(nt))), net), "layer": layer, "nodes": nodes_hash(vocab, nodes), "unit": unit, "min_co": mc, "npmi": thr, "topk": topk}
                     edges[name] = (ek, cached_edges(cache_dir, ek, lambda: npmi_edges(Bl, uw, mc, thr, topk)))
                 union = pd.concat([edges["base"][1], edges["rare"][1]]).sort_values("npmi", ascending=False) \
                     .drop_duplicates(["i", "j"]).sort_values(["i", "j"]).reset_index(drop=True)
