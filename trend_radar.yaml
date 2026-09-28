@@ -241,3 +241,41 @@ e4:
   subtopic_ratio: 0.5        # 최대 대응 공동체 질량의 절반 이상인 공동체 → 하위 주제 후보
   # 잡음 탐침 (평가 전용, E5a Event Spike에서 드러난 비콘텐츠 사건). 군집 입력·등급에는 쓰지 않음
   noise_probes: [청문회, 후보자, 모임 통장, 부산 상어, 카카오 뱅크 앱]
+
+e41:
+  # E4.1 문서 군집 보완 (2026-09-28 사용자 결정). A Leiden 기사 배정 = 운영 기준선, B LSA K-means = 도전자, C 분야별 층화 = 보완 실험
+  title_weight: 2.0          # 제목 용어 가중 (본문 없음 → 제목 + 요약)
+  network:
+    topk: 15
+    resolution: 1.4          # E4 자동 제안값
+    base_min_co: 10          # 기본 백본
+    base_npmi: 0.20
+    rare_min_co: 5           # 희소 분야 보완 백본 (연결량은 적지만 결합 강도 높은 관계만 추가)
+    rare_npmi: 0.30
+  min_coverage: 0.3          # 기사 핵심어 TF-IDF 질량 중 공동체 소속 비율이 이 미만이면 LOW
+  margin_min: 0.1            # 1·2위 점수 차 (1위 대비) 이 미만이고 분할 기사가 아니면 LOW
+  split_min_mass: 0.25       # 1·2위 공동체가 각각 기사 공동체 질량의 25% 이상 → 두 공동체에 점수 비례 분할
+  svd_dims: [100, 200, 300]
+  lsa_k_grid: [80, 120, 160]
+  sector_weight_power: 0.5   # 분야 기사 수의 제곱근 역수
+  small_sectors: [만화, 애니메이션, 캐릭터]
+  stratified_k_total: 120
+  stratified_dim: 100
+  stratified_link_cosine: 0.5
+  stratified_weak_mass: 0.3
+  refine_size_quantile: 0.9  # 가중 기사량 상위 10% 공동체
+  refine_coherence_quantile: 0.25   # 또는 일관성 하위 25% → LSA 세분화 (k는 실루엣으로 2~8 중 선택)
+  refine_min_articles: 100
+  eval_exclude_n: 3000       # 잡음 평가용 사후 배정 (학습 입력에 섞지 않음)
+  eval_review_low_n: 2000
+  gates:
+    ari_gain: 0.2            # 기준선(E4 희소 K-means) 시드 ARI + 0.2 이상
+    largest_share_max: 0.10
+    low_conf_max: 0.30
+  noise_risk_max: 0.2
+  entity_concentration: 0.7  # 이상이면 ENTITY_EVENT (실패로 보지 않고 유형 분리)
+  cross_min_share: 0.2
+  cross_max_share: 0.6
+  policy_min_hits: 2
+  # 정책 유형 판정 단어 (주제 유형 표시 전용, 군집 입력에 쓰지 않음)
+  policy_words: [규제, 정책, 법, 법안, 개정, 정부, 문체부, 문화체육관광부, 공정위, 공정거래위원회, 과징금, 제재, 국회, 청문회, 진흥, 지원, 등급, 셧다운, 확률형, 저작권, 관세, 한한령, 과세, 세제, 후보자, 장관]

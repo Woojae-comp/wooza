@@ -62,25 +62,27 @@ def sentence_spans(text: str) -> list[tuple[int, int]]:
     return out
 
 
-def sentence_terms(tokens, texts, lexicon, attach, restore) -> tuple[list[list[str]], np.ndarray]:
-    """문장별 후보어 (E3와 같은 추출 규칙). 반환: 문장별 용어 목록, 문장 → 기사 행 번호."""
+def sentence_terms(tokens, texts, lexicon, attach, restore) -> tuple[list[list[str]], np.ndarray, np.ndarray]:
+    """문장별 후보어 (E3와 같은 추출 규칙). 반환: 문장별 용어 목록, 문장 → 기사 행 번호, 제목 문장 여부."""
     from .e3 import candidates
 
-    groups, owner, gtexts = [], [], []
+    groups, owner, gtexts, title = [], [], [], []
     for r, (toks, text) in enumerate(zip(tokens, texts)):
         spans = sentence_spans(text)
+        nl = text.find("\n")
         b = [[] for _ in spans]
         j = 0
         for t in toks:
             while j < len(spans) - 1 and t[1] >= spans[j][1]:
                 j += 1
             b[j].append(t)
-        for g in b:
+        for k, g in enumerate(b):
             if g:
                 groups.append(g)
                 owner.append(r)
                 gtexts.append(text)
-    return candidates(groups, gtexts, lexicon, attach, restore=restore), np.array(owner)
+                title.append(k == 0 and nl > 0 and spans[0][1] == nl)
+    return candidates(groups, gtexts, lexicon, attach, restore=restore), np.array(owner, dtype=int), np.array(title, dtype=bool)
 
 
 def incidence(doc_terms: list[list[str]], vocab: list[str]) -> sparse.csr_matrix:
@@ -99,27 +101,90 @@ def incidence(doc_terms: list[list[str]], vocab: list[str]) -> sparse.csr_matrix
 
 def npmi_edges(B: sparse.csr_matrix, w: np.ndarray, min_co: int, min_npmi: float, topk: int) -> pd.DataFrame:
     """B: 단위(기사·문장) × 노드 0/1, w: 단위 가중치. 가중 NPMI, 최소 동시출현(가중 전 단위 수), 노드별 상위 k (어느 한쪽 기준)."""
+    B = B.tocsr()
+    keep_rows = w > 0
+    B, w = B[keep_rows], w[keep_rows]
     Bw = sparse.diags(w) @ B
     N = float(w.sum())
-    raw = (B.T @ B).tocoo()
+    raw = (B.T @ B).tocsr()
+    raw.sort_indices()
     cw = (B.T @ Bw).tocsr()
+    cw.sort_indices()
     df = np.asarray(Bw.sum(0)).ravel()
-    m = (raw.row < raw.col) & (raw.data >= min_co)
-    i, j = raw.row[m], raw.col[m]
-    pij = np.asarray(cw[i, j]).ravel() / N
+    rows = np.repeat(np.arange(raw.shape[0]), np.diff(raw.indptr))
+    cols = raw.indices
+    m = (rows < cols) & (raw.data >= min_co)
+    i, j, co = rows[m], cols[m], raw.data[m]
+    same = raw.nnz == cw.nnz and np.array_equal(raw.indptr, cw.indptr) and np.array_equal(raw.indices, cw.indices)
+    pij = (cw.data[m] if same else np.asarray(cw[i, j]).ravel()) / N
     ok = pij > 0
-    i, j, pij, co = i[ok], j[ok], pij[ok], raw.data[m][ok]
+    i, j, pij, co = i[ok], j[ok], pij[ok], co[ok]
     with np.errstate(divide="ignore", invalid="ignore"):
         npmi = np.log(pij / ((df[i] / N) * (df[j] / N))) / -np.log(pij)
     e = pd.DataFrame({"i": i, "j": j, "npmi": npmi, "co_units": co.astype(int)})
     e = e[e["npmi"] >= min_npmi]
     if e.empty:
-        return e
+        return e.reset_index(drop=True)
     both = pd.concat([e.rename(columns={"i": "a", "j": "b"}), e.rename(columns={"j": "a", "i": "b"})])
     both["r"] = both.groupby("a")["npmi"].rank(ascending=False, method="first")
     keep = both[both["r"] <= topk]
-    key = set(zip(np.minimum(keep["a"], keep["b"]), np.maximum(keep["a"], keep["b"])))
-    return e[[(a, b) in key for a, b in zip(e["i"], e["j"])]].reset_index(drop=True)
+    key = pd.DataFrame({"i": np.minimum(keep["a"], keep["b"]), "j": np.maximum(keep["a"], keep["b"])}).drop_duplicates()
+    return e.merge(key, on=["i", "j"]).sort_values(["i", "j"]).reset_index(drop=True)
+
+
+# ---------------------------------------------------------------- 캐시 (네트워크 격자·문장 행렬)
+# 키: data_snapshot_id, 사전 버전(E3 run_id), 네트워크 층(노드 집합 해시), 동시출현 단위, 임계값, 상위 k, resolution, 시드
+
+CACHE_VERSION = "e4cache_v1"
+
+
+def cache_key(d: dict) -> str:
+    import hashlib
+
+    return hashlib.sha1(json.dumps({**d, "_v": CACHE_VERSION}, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()[:16]
+
+
+def nodes_hash(vocab: list[str], nodes) -> str:
+    import hashlib
+
+    return hashlib.sha1("\n".join(vocab[i] for i in nodes).encode()).hexdigest()[:12]
+
+
+def cached_edges(cache_dir: Path, key: dict, build) -> pd.DataFrame:
+    p = cache_dir / f"edges_{cache_key(key)}.parquet"
+    if p.exists():
+        return pd.read_parquet(p)
+    e = build()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    e.to_parquet(p, index=False)
+    p.with_suffix(".json").write_text(json.dumps(key, ensure_ascii=False, default=str), encoding="utf-8")
+    return e
+
+
+def cached_leiden(cache_dir: Path, key: dict, n: int, edges: pd.DataFrame, resolution: float, seed: int):
+    k = {**key, "resolution": resolution, "seed": seed}
+    p = cache_dir / f"leiden_{cache_key(k)}.npz"
+    if p.exists():
+        z = np.load(p)
+        return z["memb"], float(z["q"])
+    m, q = leiden(n, edges, resolution, seed)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    np.savez(p, memb=m, q=q)
+    return m, q
+
+
+def sentence_matrix(cache_dir: Path, key: dict, tokens, texts, lexicon, attach, restore, vocab):
+    """모든 기사의 문장 × 용어 행렬, 문장 → 기사 행, 제목 문장 여부 (캐시)."""
+    p = cache_dir / f"sent_{cache_key(key)}.npz"
+    if p.exists():
+        z = np.load(p)
+        S = sparse.csr_matrix((z["data"], z["indices"], z["indptr"]), shape=tuple(z["shape"]))
+        return S, z["owner"], z["is_title"]
+    sterms, owner, is_title = sentence_terms(tokens, texts, lexicon, attach, restore)
+    S = incidence(sterms, vocab)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    np.savez(p, data=S.data, indices=S.indices, indptr=S.indptr, shape=np.array(S.shape), owner=owner, is_title=is_title)
+    return S, owner, is_title
 
 
 def leiden(n: int, edges: pd.DataFrame, resolution: float, seed: int) -> tuple[np.ndarray, float]:
@@ -270,10 +335,13 @@ def run_e4(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
         texts = prepped_texts(corpus.articles, names_tok)
         tokens = tokenize_corpus(texts, names_tok, out_root / "cache")
         idx_use = np.where(use)[0]
-        sterms, owner = sentence_terms([tokens[i] for i in idx_use], [texts[i] for i in idx_use], lex,
-                                       set(cfg["keywords"].get("attach_suffixes", [])), restore)
-        S = incidence(sterms, vocab)
-        s_w = half[idx_use][owner]
+        cache_dir = out_root / "cache" / "e4"
+        base_key = {"data_snapshot_id": snap["data_snapshot_id"], "dictionary": e3_run}
+        S_all, owner_all, _ = sentence_matrix(cache_dir, {**base_key, "kind": "sentences_all"}, tokens, texts, lex,
+                                              set(cfg["keywords"].get("attach_suffixes", [])), restore, vocab)
+        smask = use[owner_all]
+        S = S_all[smask]
+        s_w = half[owner_all[smask]]
         st["rows_out"] = S.shape[0]
 
     # ------------------------------------------------ 네트워크 격자
@@ -289,10 +357,12 @@ def run_e4(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
                 for min_co in grid.get("min_co", [5, 10]):
                     for thr in grid.get("npmi", [0.10, 0.20]):
                         for topk in grid.get("topk", [15, 20]):
-                            e = npmi_edges(Bl, w, min_co, thr, topk)
+                            ek = {**base_key, "layer": layer, "nodes": nodes_hash(vocab, nodes), "unit": unit,
+                                  "min_co": min_co, "npmi": thr, "topk": topk}
+                            e = cached_edges(cache_dir, ek, lambda: npmi_edges(Bl, w, min_co, thr, topk))
                             nets[(layer, unit, min_co, thr, topk)] = e
                             for res in grid.get("resolution", [0.6, 1.0, 1.4]):
-                                runs = [leiden(len(nodes), e, res, s) for s in seeds]
+                                runs = [cached_leiden(cache_dir, ek, len(nodes), e, res, s) for s in seeds]
                                 met = community_metrics([m for m, _ in runs], [q for _, q in runs])
                                 net_rows.append({"layer": layer, "unit": unit, "min_co": min_co, "npmi": thr, "topk": topk,
                                                  "resolution": res, "nodes": len(nodes), "edges": len(e), **met,
