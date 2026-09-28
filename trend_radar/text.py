@@ -169,13 +169,14 @@ def extract_keywords(texts: list[str], tokens: list[list[Token]], lexicon: Lexic
 class DocTerm:
     """기사 × 키워드 이진 행렬 (설계 9장)과 출현 횟수."""
 
-    def __init__(self, doc_words: list[list[str]], min_df: int):
+    def __init__(self, doc_words: list[list[str]], min_df: int, vocab: list[str] | None = None):
         df = Counter()
         tf = Counter()
         for ws in doc_words:
             df.update(set(ws))
             tf.update(ws)
-        vocab = sorted((w for w, c in df.items() if c >= min_df), key=lambda w: (-df[w], w))
+        if vocab is None:
+            vocab = sorted((w for w, c in df.items() if c >= min_df), key=lambda w: (-df[w], w))
         self.vocab = vocab
         self.index = {w: i for i, w in enumerate(vocab)}
         rows, cols = [], []

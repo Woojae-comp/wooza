@@ -143,6 +143,25 @@ def build_corpus(raw: pd.DataFrame, cfg: dict) -> Corpus:
 
     sep = cfg["input"].get("sector_separators", "[·,|]")
     df["sectors"] = [split_sectors(v, sep) for v in df["sector_raw"]]
+    # 분석 대상 분야만 남긴다: 기업 분야가 대상과 겹치는 행만, 분야 매핑도 대상 분야로 줄인다
+    # 대상 밖 분야에만 속한 기업의 행은 related_tier면 '연관산업' 한 분야로 두고, 아니면 뺀다.
+    include = clean.get("include_sectors") or []
+    related = clean.get("related_label", "연관산업")
+    df["core"] = True
+    if include:
+        inc = set(include)
+        before = df["gid"].nunique()
+        df["sectors"] = [[s for s in ss if s in inc] for ss in df["sectors"]]
+        df["core"] = df["sectors"].str.len() > 0
+        out_co = sorted(set(df.loc[~df["core"], "company"]) - set(df.loc[df["core"], "company"]))
+        if clean.get("related_tier", True):
+            df.loc[~df["core"], "sectors"] = pd.Series([[related]] * int((~df["core"]).sum()), index=df.index[~df["core"]])
+        else:
+            df = df[df["core"]]
+        rep["include_sectors"] = list(include)
+        rep["related_tier"] = bool(clean.get("related_tier", True))
+        rep["excluded_by_sector"] = int(before - df["gid"].nunique())
+        rep["companies_out_of_scope"] = out_co
 
     # 분야 매핑: 전역기사ID + 분야 (같은 분야 여러 기업에 걸리면 한 번)
     a_sec = df[["gid", "sectors"]].explode("sectors").rename(columns={"sectors": "sector"})
@@ -154,6 +173,8 @@ def build_corpus(raw: pd.DataFrame, cfg: dict) -> Corpus:
     arts = first[["gid", "date", "title", "summary", "press", "link"]].copy()
     arts = arts.merge(df.groupby("gid")["company"].agg(lambda s: sorted(set(s))).rename("companies"), on="gid")
     arts = arts.merge(df.groupby("gid")["strong"].any().rename("strong"), on="gid")
+    # 핵심 분야 기업이 하나라도 걸린 기사는 core, 연관산업 기업만 걸린 기사는 related
+    arts = arts.merge(df.groupby("gid")["core"].any().map({True: "core", False: "related"}).rename("tier"), on="gid")
     arts = arts.merge(a_sec.groupby("gid")["sector"].agg(lambda s: sorted(set(s))).rename("sectors"), on="gid", how="left")
     arts["sectors"] = arts["sectors"].apply(lambda v: v if isinstance(v, list) else [])
     arts = arts.sort_values(["date", "gid"]).reset_index(drop=True)

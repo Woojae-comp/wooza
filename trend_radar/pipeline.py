@@ -196,31 +196,47 @@ def analyze(cfg: dict, corpus: Corpus, arts: pd.DataFrame, texts: list[str], tok
     """한 층(또는 전체)의 기사에 대해 지표·네트워크·트렌드를 계산한다."""
     out.mkdir(parents=True, exist_ok=True)
     companies = sorted(corpus.article_company["company"].unique())
-    dt = DocTerm(kw, cfg["keywords"]["min_df"])
-    log(f"기사 {len(arts):,}건 · 어휘 {len(dt.vocab):,}개")
+    # 핵심 분야 기사가 앞, 연관산업 기사가 뒤에 오도록 정렬한다 (행 번호가 두 범위에서 같도록).
+    # 전체 트렌드는 핵심 분야 기사로만, 연관산업은 분야별·융합에서 한 단계 낮은 분야로만 본다.
+    related = cfg["cleaning"].get("related_label", "연관산업")
+    if "tier" in arts:
+        order = np.argsort((arts["tier"] != "core").to_numpy(), kind="stable")
+        arts = arts.iloc[order].reset_index(drop=True)
+        kw = [kw[i] for i in order]
+        texts = [texts[i] for i in order]
+        tokens = [tokens[i] for i in order]
+        n_core = int((arts["tier"] == "core").sum())
+    else:
+        n_core = len(arts)
+    arts_all, kw_all = arts, kw
+    arts = arts_all.iloc[:n_core]
+    dt = DocTerm(kw_all[:n_core], cfg["keywords"]["min_df"])
+    dt_all = DocTerm(kw_all, cfg["keywords"]["min_df"], vocab=dt.vocab) if n_core < len(arts_all) else dt
+    log(f"기사 {n_core:,}건 (연관산업 {len(arts_all) - n_core:,}건 별도) · 어휘 {len(dt.vocab):,}개")
 
     ktab, series = keyword_table(dt, arts)
     win = make_windows(arts, cfg)
-    gid_row = pd.Series(np.arange(len(arts)), index=arts["gid"])
+    gid_row = pd.Series(np.arange(len(arts_all)), index=arts_all["gid"])
     sec_map = corpus.article_sector.assign(row=lambda d: d["gid"].map(gid_row)).dropna()
     sector_rows = {s: np.sort(g["row"].astype(int).to_numpy())
-                   for s, g in sorted(sec_map.groupby("sector"), key=lambda x: -len(x[1]))}
-    sectors = list(sector_rows)
+                   for s, g in sorted(sec_map.groupby("sector"), key=lambda x: (x[0] == related, -len(x[1])))}
+    core_sector_rows = {k: v[v < n_core] for k, v in sector_rows.items() if k != related}
+    sectors = list(core_sector_rows)
     all_rows = np.arange(len(arts))
     ci = {c: i for i, c in enumerate(companies)}
     cr_, cc_ = [], []
-    for r, cs in enumerate(arts["companies"]):
+    for r, cs in enumerate(arts_all["companies"]):
         for c in cs:
             cr_.append(r)
             cc_.append(ci[c])
-    company_X = sparse.csr_matrix((np.ones(len(cr_)), (cr_, cc_)), shape=(len(arts), len(companies)))
+    company_X = sparse.csr_matrix((np.ones(len(cr_)), (cr_, cc_)), shape=(len(arts_all), len(companies)))
     # 기업명 키워드: 분야 소속이 기업 매핑에서 오므로 분야 간 거리 계산에서는 뺀다
     co_words = {token_form(n) for n in names} | set(companies)
     co_mask = np.array([w in co_words for w in dt.vocab])
 
     log("상태 분류 (전체)")
     st = status_frame(dt, arts, all_rows, win, cfg, company_X, companies)
-    dif = diffusion(dt, arts, sector_rows, win, cfg)
+    dif = diffusion(dt, arts, core_sector_rows, win, cfg)
     n_sig_recent = dif["sig_recent"].sum(1)
     n_sig_first = dif["sig_first"].sum(1)
     st["sectors_recent"] = n_sig_recent
@@ -259,18 +275,19 @@ def analyze(cfg: dict, corpus: Corpus, arts: pd.DataFrame, texts: list[str], tok
     pair_words = [dt.vocab[j] for j in np.argsort(-np.asarray(dt.X[recent_rows].sum(axis=0)).ravel())[:1500]]
     pairs = keyword_pair_convergence(dt, first_rows, recent_rows, pair_words, net_first)
 
-    art_cs: list[dict[str, set]] = [dict() for _ in range(len(arts))]
+    art_cs: list[dict[str, set]] = [dict() for _ in range(len(arts_all))]
     for r in corpus.article_company.itertuples():
         i = gid_row.get(r.gid)
         if i is not None:
             art_cs[i][r.company] = set(r.sectors)
-    sconv_year = sector_convergence(dt, arts, sector_rows, art_cs, win.years, "year", exclude=co_mask)
-    sconv_half = sector_convergence(dt, arts, sector_rows, art_cs, win.halves, "half", exclude=co_mask)
+    # 분야 간 거리에는 연관산업도 넣는다 (핵심 분야 × 연관산업 수렴)
+    sconv_year = sector_convergence(dt_all, arts_all, sector_rows, art_cs, win.years, "year", exclude=co_mask)
+    sconv_half = sector_convergence(dt_all, arts_all, sector_rows, art_cs, win.halves, "half", exclude=co_mask)
 
     log("분기별 군집 추적")
     qnets = quarterly_networks(dt, arts, win, cfg, exclude=set())
 
-    store = ArticleStore(arts)
+    store = ArticleStore(arts_all)
     n_list = cfg["output"]["articles_per_list"]
     months = win.months
     ms = series["month"]
@@ -335,6 +352,12 @@ def analyze(cfg: dict, corpus: Corpus, arts: pd.DataFrame, texts: list[str], tok
         profiles[w] = p
 
     log("분야별 트렌드")
+    # 분야별은 연관산업까지 전체 행으로 본다 (핵심 행 번호는 그대로)
+    core_dt, core_arts = dt, arts
+    dt, arts = dt_all, arts_all
+    recent_mask = np.zeros(len(arts_all), dtype=bool)
+    recent_mask[recent_rows] = True
+    recent_mask[n_core:] = arts_all["month"].iloc[n_core:].isin(win.recent12).to_numpy()
     sector_out = {}
     excl_growth = set()
     for sec, rows in sector_rows.items():
@@ -381,9 +404,13 @@ def analyze(cfg: dict, corpus: Corpus, arts: pd.DataFrame, texts: list[str], tok
             "clusters": clusters,
         }
 
+    dt, arts = core_dt, core_arts
     log("후보·출력")
     result = assemble(cfg, corpus, arts, win, dt, st, stx, profiles, dif, sectors, net_all, net_first, net_prev,
                       net_recent, stru, pairs, sconv_year, sconv_half, qnets, sector_out, store)
+    result["meta"]["sector_tabs"] = list(sector_out)
+    result["meta"]["related_label"] = related
+    result["meta"]["related_articles"] = int(len(arts_all) - n_core)
     result["lexicon"] = {"stopwords": len(lex.stopwords), "synonyms": len(lex.synonym_map), "compounds": len(lex.compounds),
                          "path": str(lexicon_path or "lexicon.yaml")}
 

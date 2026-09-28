@@ -163,7 +163,7 @@ const LAYER_NOTE = {
 };
 function setLayer(k) {
   layer = k; D = ALL.layers[k]; P = D.profiles; M = D.meta; S = M.sectors;
-  curSector = S[0];
+  curSector = (M.sector_tabs || S)[0];
   const keys = Object.keys(ALL.layers);
   $("#layerSeg").innerHTML = keys.length > 1 ? keys.map(x => `<button data-layer="${x}" class="${x === k ? "on" : ""}">${esc(ALL.layers[x].meta.layer ? ALL.layers[x].meta.layer.label : "전체")}</button>`).join("") : "";
   const L = M.layer;
@@ -242,7 +242,7 @@ function clusterCard(c, chg) {
 
 let curSector = null;
 render.sector = () => {
-  const opts = S.map(s => `<option ${s === curSector ? "selected" : ""}>${esc(s)}</option>`).join("");
+  const opts = (M.sector_tabs || S).map(s => `<option ${s === curSector ? "selected" : ""}>${esc(s)}</option>`).join("");
   const d = D.sectors[curSector];
   const row = r => `<tr><td><span class="${P[r.k] ? "link" : ""}" data-k="${esc(r.k)}">${esc(r.k)}</span>${r.company_specific ? ` <span class="tag company">기업 한정 · ${esc(r.top_company)}</span>` : ""}</td>
     <td>${(r.status || []).map(s => `<span class="tag ${s}">${STATUS_KO[s]}</span>`).join(" ")}</td>
@@ -250,6 +250,7 @@ render.sector = () => {
     <td>${(r.arts || []).slice(0, 1).map(id => { const a = D.articles[id]; return a ? `<span class="muted">${a.d}</span> ${esc(a.t)}` : ""; }).join("")}</td></tr>`;
   const tbl = (rows, title, note) => `<h3>${title}</h3>${note ? `<div class="note">${note}</div>` : ""}<div class="tablewrap"><table><thead><tr><th>키워드</th><th>상태</th><th class="n">최근 비중</th><th class="n">직전 비중</th><th class="n">증가</th><th class="n">분야 특화</th><th>최근 기사</th></tr></thead><tbody>${rows.map(row).join("") || '<tr><td colspan="7" class="muted">해당 없음</td></tr>'}</tbody></table></div>`;
   return `<div class="toolbar"><span class="muted">분야</span><select id="secSel">${opts}</select><span class="muted">기사 ${d.articles.toLocaleString()}건 (최근 12개월 ${d.recent_articles.toLocaleString()}건) · 비중은 분야 기사 대비 · 분야 특화 = 분야 내 비중 / 전체 비중</span></div>
+    ${curSector === M.related_label ? `<div class="warn">연관산업: 대상 분야(${esc(S.join("·"))}) 밖 기업(영화·광고·출판·지식정보·콘텐츠솔루션 전용)의 기사입니다. 한 단계 낮은 층위로, 산업 전체·공통·부상·구조 변화 계산에는 넣지 않고 이 탭과 융합 신호에서만 봅니다. 핵심 분야 기사에 함께 걸린 경우도 포함합니다.</div>` : ""}
     <h2>${esc(curSector)} 이슈 군집 (최근 12개월)</h2>
     <div class="grid">${d.clusters.map(c => clusterCard(c, c.change ? {status: c.change, added: c.added, removed: c.removed, similarity: null} : null)).join("")}</div>
     ${tbl(d.rising, "분야 내 부상·성장 키워드")}

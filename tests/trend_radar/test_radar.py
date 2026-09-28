@@ -78,7 +78,7 @@ def make_raw(seed: int = 0) -> pd.DataFrame:
 
 @pytest.fixture(scope="module")
 def cfg():
-    return load_config(overrides={"keywords": {"min_df": 5}, "output": {"profile_top_n": 200}, "layers": {"enabled": False},
+    return load_config(overrides={"keywords": {"min_df": 5}, "output": {"profile_top_n": 200}, "layers": {"enabled": False}, "cleaning": {"include_sectors": []},
                                   "network": {"top_n": 50, "min_cooccurrence": 3}})
 
 
@@ -222,3 +222,35 @@ def test_layers_split_content_and_market():
     assert lab["market"].iloc[1] and not lab["content"].iloc[1]
     assert not lab["market"].iloc[-2]
     assert lab["content"].iloc[-1]
+
+
+def test_include_sectors_drop(raw):
+    cfg = load_config(overrides={"cleaning": {"include_sectors": ["게임", "방송 및 영상"], "related_tier": False}})
+    c = build_corpus(raw, cfg)
+    assert set(c.article_sector["sector"]) == {"게임", "방송 및 영상"}  # 영화·음악 매핑은 빠진다
+    assert "하이브" in c.report["companies_out_of_scope"]  # 음악에만 속한 기업
+    assert not c.article_company["company"].eq("하이브").any()
+
+
+def test_include_sectors_related_tier(raw):
+    cfg = load_config(overrides={"cleaning": {"include_sectors": ["게임", "방송 및 영상"], "related_tier": True}})
+    c = build_corpus(raw, cfg)
+    # 대상 밖 기업(하이브)의 기사는 '연관산업' 한 분야로 남는다
+    assert set(c.article_sector["sector"]) == {"게임", "방송 및 영상", "연관산업"}
+    hybe = c.article_company.loc[c.article_company["company"] == "하이브", "gid"]
+    only_hybe = set(hybe) - set(c.article_company.loc[c.article_company["company"] != "하이브", "gid"])
+    tiers = c.articles.set_index("gid").loc[sorted(only_hybe), "tier"]
+    assert (tiers == "related").all()
+    assert (c.articles["tier"] == "core").any()
+
+
+def test_related_tier_excluded_from_overall(tmp_path, raw):
+    cfg = load_config(overrides={"keywords": {"min_df": 5}, "output": {"profile_top_n": 100},
+                                 "network": {"top_n": 50, "min_cooccurrence": 3}, "layers": {"enabled": False},
+                                 "cleaning": {"include_sectors": ["게임", "방송 및 영상"], "related_tier": True}})
+    r = run(cfg, out_dir=str(tmp_path), raw=raw, with_candidates=False)
+    n_related = r["meta"]["related_articles"]
+    assert n_related > 0
+    assert r["meta"]["articles"] == len(build_corpus(raw, cfg).articles) - n_related  # 전체 트렌드는 핵심 기사만
+    assert "연관산업" in r["sectors"] and "연관산업" not in r["meta"]["sectors"]  # 분야별 탭에는 있고 확산도 분모에는 없다
+    assert any("연관산업" in (p["a"], p["b"]) for p in r["sector_convergence"]["year"]["pairs"])
