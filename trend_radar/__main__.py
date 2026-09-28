@@ -46,11 +46,27 @@ def main() -> None:
     e23 = sub.add_parser("e23", help="E2.3: 3분류(CONTENT/MARKET/OTHER) 라벨 모델 비교 → 통과 시 후보 E2")
     e23.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
     e23.add_argument("--out", default="out")
+    e23b = sub.add_parser("e23b", help="E2.3b: 라벨 모델 보정 진단 (근거 계열 통합, G3 vs H2 × 사전분포 L/M/H)")
+    e23b.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
+    e23b.add_argument("--out", default="out")
     for p_ in (e3, e4, e41, e42, e5):
         p_.add_argument("--use-candidate", action="store_true", help="승인 전 후보 E2(e2.candidate_run_id)로 실행")
     h = sub.add_parser("html", help="radar.json에서 radar.html만 다시 만든다")
     h.add_argument("--out", default="out")
     a = ap.parse_args()
+    if a.cmd == "e23b":
+        import json
+        from pathlib import Path
+
+        from .e0 import input_files
+        from .e23b import run_e23b
+        from .load import read_raw
+        cfg = load_config()
+        files = input_files(a.input or cfg["input"]["paths"])
+        cfg["_input_files"] = files
+        s = run_e23b(cfg, read_raw(files), Path(a.out))
+        print(json.dumps({k: v for k, v in s.items() if k not in ("models", "family_removal")}, ensure_ascii=False, indent=1, default=str))
+        return
     if a.cmd == "e23":
         import json
         from pathlib import Path

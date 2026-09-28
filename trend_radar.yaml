@@ -361,3 +361,13 @@ e23_gates:
   policy_exclude_max: 0.01
   broadcast_excess_pp: 2.0
   include_change_max: 0.30    # INCLUDE 수가 30% 이상 바뀌면 자동 확정하지 않음
+
+e23b_gates:
+  # E2.3b 라벨 모델 단계 기준 (분류기를 붙이기 전)
+  probe_drop_pp: 5.0
+  anchor_drop_pp: 2.0
+  policy_exclude_max: 0.01
+  broadcast_excess_pp: 2.0
+  anchor_content_min: 0.5        # 콘텐츠 앵커 중 CONTENT 예측 비율 (CONTENT 클래스 붕괴 확인, E2.3은 0.32)
+  family_removal_pp: 10.0        # 한 계열 제거 시 CONTENT 비율 변화
+  prior_agreement_min: 0.95      # Prior-L/M 판정 일치율
