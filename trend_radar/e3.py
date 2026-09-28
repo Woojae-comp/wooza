@@ -239,7 +239,8 @@ def run_e3(cfg: dict, raw: pd.DataFrame, out_root: Path, min_df: int = 5) -> dic
     last = str(raw[cfg["input"]["columns"]["date"]].astype(str).str[:10].max())
     snap = snapshot(files, last) if files else {"data_snapshot_id": None}
     run = Run("e3_keyword_dictionary", cfg, out_root, snap["data_snapshot_id"])
-    e2_run, e2_path, e2_sum = latest_e2(REGISTRY, out_root)
+    from .selection import selected_e2
+    e2_run, e2_path, e2_sum = selected_e2(cfg, REGISTRY, out_root)   # 선정(또는 명시 후보) E2만
     lex = Lexicon.load()
 
     with run.stage("e3_input") as st:

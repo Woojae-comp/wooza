@@ -78,6 +78,11 @@ def drop_search_companies(kw: list[list[str]], arts: pd.DataFrame, aliases: dict
         if any(a in text for a in action_words):
             out.append(ws)
             continue
+        # 기업이 실제 문장 주체 ('SBS가 …', 'YTN은 …', '하이브, …') → 기사 내용 근거로 유지
+        names = [c for c in cos] + [a for c in cos for a in (aliases.get(c) or [])]
+        if any(re.search(rf"(?:^|[\s\"'‘“(]){re.escape(n)}(?:은|는|이|가|,)(?=\s)", text) for n in names):
+            out.append(ws)
+            continue
         ct = company_tokens(cos, aliases)
         new = [w for w in ws if w not in ct]
         dropped[i] = len(new) < len(ws)

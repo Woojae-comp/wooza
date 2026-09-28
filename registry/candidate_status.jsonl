@@ -1,0 +1,1 @@
+{"run_id": "run_20260928_235732_a01c", "model_id": "e2_2", "variants": ["orig|base", "orig|softA", "orig|softB", "noco|base", "noco|softA", "noco|softB", "noco_src|base", "noco_src|softA", "noco_src|softB"], "candidate_failed": 1, "reason": "E2 내부 선정 기준 통과 모델 없음 (탐침 감소 최대 2.4%p < 5%p)", "marked_at": "2026-09-29T00:17:17+09:00"}

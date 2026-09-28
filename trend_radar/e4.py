@@ -307,10 +307,10 @@ def run_e4(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
     last = str(raw[cfg["input"]["columns"]["date"]].astype(str).str[:10].max())
     snap = snapshot(files, last) if files else {"data_snapshot_id": None}
     run = Run("e4_topics", cfg, out_root, snap["data_snapshot_id"])
-    e3_run = latest_run(REGISTRY, "keyword_dictionary")
+    from .selection import selected_e2, selected_e3
+    e2_run_id, _, e2_sum = selected_e2(cfg, REGISTRY, out_root)
+    e3_run = selected_e3(REGISTRY, e2_run_id)
     e3_dir = out_root / "runs" / e3_run
-    from .e3 import latest_e2
-    e2_run_id, _, e2_sum = latest_e2(REGISTRY, out_root)
     e2_sum_thr = e2_sum["otsu_threshold"]   # 저관련 군집 기준 = E2 관련성 임계값
     lex = Lexicon.load()
 

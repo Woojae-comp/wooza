@@ -30,6 +30,9 @@ def test_drop_search_company_unless_industry_action():
     out, dropped = drop_search_companies(kw, arts, {}, {"매각", "인수"})
     assert out[0] == ["의원"] and dropped[0]                 # 기업명만 있고 산업 행위 없음 → 콘텐츠 근거 제외
     assert out[1] == ["YTN", "지분"] and not dropped[1]      # 매각·인수가 기사 주제 → 유지
+    subj = pd.DataFrame({"title": ["SBS가 사과문 발표"], "summary": ["논란 이후 입장을 냈다"], "companies": [["SBS"]]})
+    out2, d2 = drop_search_companies([["SBS", "사과문"]], subj, {}, {"매각"})
+    assert out2[0] == ["SBS", "사과문"] and not d2[0]       # 기업이 문장 주체 → 유지
 
 
 def test_separate_source_tokens():

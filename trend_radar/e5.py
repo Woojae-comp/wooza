@@ -187,7 +187,8 @@ def run_e5a(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
     last = str(raw[cfg["input"]["columns"]["date"]].astype(str).str[:10].max())
     snap = snapshot(files, last) if files else {"data_snapshot_id": None}
     run = Run("e5a_keyword_signal", cfg, out_root, snap["data_snapshot_id"])
-    e3_run = latest_run(REGISTRY, "keyword_dictionary")
+    from .selection import selected_e2, selected_e3
+    e3_run = selected_e3(REGISTRY, selected_e2(cfg, REGISTRY, out_root)[0])
     e3_dir = out_root / "runs" / e3_run
 
     with run.stage("load") as st:

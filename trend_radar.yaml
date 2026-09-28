@@ -312,6 +312,13 @@ e42:
     rare_npmi: 0.30
 
 e2:
+  # 운영 포인터: 하류 단계(E3·E4·E5)는 '최신'이 아니라 여기 지정된 실행만 읽는다 (trend_radar/selection.py)
+  # 후보는 --use-candidate 로 명시했을 때만 하류에 연결. 통과 후에만 selected_* 교체 (decision_log)
+  selected_model_id: e2_1_operational
+  selected_run_id: run_20260928_221314_4bc3
+  candidate_model_id: null
+  candidate_run_id: null
+  selection_status: approved
   # E2.1 잡음 유입 보정 (2026-09-28 사용자 결정). 강제 제외가 아니라 EXCLUDE 방향 투표 → 라벨 모델이 정확도 추정
   noise_lfs: true
   # 방송사 출처 전용 규칙: 검색 기업 → 기사 속 표기 (출처 자리에만 나오면 EXCLUDE 방향)
@@ -346,3 +353,11 @@ e22_gates:
   broadcast_excess_pp: 3.0    # 방송 분야 감소율이 다른 분야 평균보다 3%p 넘게 크지 않음
   policy_exclude_max: 0.01    # 정책 기사 EXCLUDE 이동률 1% 미만
   relevant_rate_shift: 0.10   # 전체 관련 판정이 10% 넘게 변하면 원인 확인 표시
+
+e23_gates:
+  # E2.3 필수 기준 (E2.1 운영 대비). E4.2 비잡음 주제 탐침 흡수(0.67 → 목표 0.55 이하)는 체인 재실행 뒤 확인
+  probe_drop_pp: 5.0
+  anchor_drop_pp: 2.0
+  policy_exclude_max: 0.01
+  broadcast_excess_pp: 2.0
+  include_change_max: 0.30    # INCLUDE 수가 30% 이상 바뀌면 자동 확정하지 않음

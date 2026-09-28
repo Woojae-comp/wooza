@@ -43,9 +43,28 @@ def main() -> None:
     e5 = sub.add_parser("e5", help="E5a: 키워드 시계열 신호 실험 (trend 아님) → 06a_keyword_signal.csv")
     e5.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
     e5.add_argument("--out", default="out")
+    e23 = sub.add_parser("e23", help="E2.3: 3분류(CONTENT/MARKET/OTHER) 라벨 모델 비교 → 통과 시 후보 E2")
+    e23.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
+    e23.add_argument("--out", default="out")
+    for p_ in (e3, e4, e41, e42, e5):
+        p_.add_argument("--use-candidate", action="store_true", help="승인 전 후보 E2(e2.candidate_run_id)로 실행")
     h = sub.add_parser("html", help="radar.json에서 radar.html만 다시 만든다")
     h.add_argument("--out", default="out")
     a = ap.parse_args()
+    if a.cmd == "e23":
+        import json
+        from pathlib import Path
+
+        from .e0 import input_files
+        from .e23 import run_e23
+        from .load import read_raw
+        cfg = load_config()
+        files = input_files(a.input or cfg["input"]["paths"])
+        cfg["_input_files"] = files
+        cfg["_use_candidate"] = getattr(a, "use_candidate", False)
+        s = run_e23(cfg, read_raw(files), Path(a.out))
+        print(json.dumps({k: v for k, v in s.items() if k not in ("models", "lf_stats")}, ensure_ascii=False, indent=1, default=str))
+        return
     if a.cmd == "e4":
         import json
         from pathlib import Path
@@ -56,6 +75,7 @@ def main() -> None:
         cfg = load_config()
         files = input_files(a.input or cfg["input"]["paths"])
         cfg["_input_files"] = files
+        cfg["_use_candidate"] = getattr(a, "use_candidate", False)
         s = run_e4(cfg, read_raw(files), Path(a.out))
         print(json.dumps(s, ensure_ascii=False, indent=1, default=str))
         return
@@ -69,6 +89,7 @@ def main() -> None:
         cfg = load_config()
         files = input_files(a.input or cfg["input"]["paths"])
         cfg["_input_files"] = files
+        cfg["_use_candidate"] = getattr(a, "use_candidate", False)
         s = run_e41(cfg, read_raw(files), Path(a.out))
         print(json.dumps({k: v for k, v in s.items() if k not in ("models", "backbones")}, ensure_ascii=False, indent=1, default=str))
         return
@@ -82,6 +103,7 @@ def main() -> None:
         cfg = load_config()
         files = input_files(a.input or cfg["input"]["paths"])
         cfg["_input_files"] = files
+        cfg["_use_candidate"] = getattr(a, "use_candidate", False)
         s = run_e42(cfg, read_raw(files), Path(a.out))
         print(json.dumps({k: v for k, v in s.items() if k != "networks"}, ensure_ascii=False, indent=1, default=str))
         return
@@ -95,6 +117,7 @@ def main() -> None:
         cfg = load_config()
         files = input_files(a.input or cfg["input"]["paths"])
         cfg["_input_files"] = files
+        cfg["_use_candidate"] = getattr(a, "use_candidate", False)
         s = run_e5a(cfg, read_raw(files), Path(a.out))
         print(json.dumps(s, ensure_ascii=False, indent=1))
         return
@@ -108,6 +131,7 @@ def main() -> None:
         cfg = load_config()
         files = input_files(a.input or cfg["input"]["paths"])
         cfg["_input_files"] = files
+        cfg["_use_candidate"] = getattr(a, "use_candidate", False)
         s = run_e22(cfg, read_raw(files), Path(a.out))
         print(json.dumps({k: v for k, v in s.items() if k != "variants"}, ensure_ascii=False, indent=1, default=str))
         return
@@ -121,6 +145,7 @@ def main() -> None:
         cfg = load_config()
         files = input_files(a.input or cfg["input"]["paths"])
         cfg["_input_files"] = files
+        cfg["_use_candidate"] = getattr(a, "use_candidate", False)
         s = run_e3(cfg, read_raw(files), Path(a.out), a.min_df)
         print(json.dumps(s, ensure_ascii=False, indent=1))
         return
@@ -133,6 +158,7 @@ def main() -> None:
         cfg = load_config()
         files = input_files(a.input or cfg["input"]["paths"])
         cfg["_input_files"] = files
+        cfg["_use_candidate"] = getattr(a, "use_candidate", False)
         s = run_e2(cfg, read_raw(files), Path(a.out), Path(a.llm_dir))
         import json
         print(json.dumps(s, ensure_ascii=False, indent=1))
