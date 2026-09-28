@@ -132,6 +132,29 @@ REVIEW 처리: 후보 추출·문서빈도·C-value·지속성·엔트로피·�
 - 백테스트(`06a_backtest.csv`): 보호 개체의 제목 따옴표 첫 등장 달 = 발표 대리값, 최다 등장 달 = 사건 대리값.
   **정답이 아니라 파생 기준**. 탐지 선행·지연, 급등을 증가로 오판한 수, 수집 초기부터 있던 작품을 신규로 재탐지한 수를 보고.
 - 최종 트렌드 유형은 E4(주제 군집·네트워크)와 결합한 **E5b**에서 확정.
+- **E5a 보완 (E4 착수 조건)**
+  - 불완전월: 마지막 기사일이 말일 전이면 그 달은 `is_partial_month=1` 잠정. `signal_type`은 직전 완전월(2026-08) 기준 확정 판정이고,
+    `signal_type_provisional`은 잠정월까지 포함한 참고값. E5b 최종 유형 판정에서 불완전월 제외.
+  - 좌측 절단: 수집 첫 3개월(2024-01~03)에 이미 등장한 키워드·작품은 `left_censored=1` → Emerging 금지.
+
+### E4 주제 군집·네트워크 (`python -m trend_radar e4`)
+역할 분리: **문서 K-means = 주제의 기본 단위**, **NPMI·Leiden = 주제 구성 관계**(주제명·구조·교차 분야 해석), 결합 단계에서 topic_registry.
+
+| 항목 | 기준 |
+|---|---|
+| 개념 네트워크 | CORE·EXTENDED 개념어. 허브 일반어(개념어 중 B 특이도 하위 50% ∩ 문서빈도 상위 10%)는 제외 |
+| 개체 확장 네트워크 | CORE·EXTENDED·EMERGING 개념어 + 작품·기업·인물·정책명 (허브 일반어 제외) |
+| 동시출현 단위 | 기사 / 문장 (E3와 같은 추출 규칙을 문장별로 적용). 두 단위 공통 연결 = `strong` |
+| 격자 | 최소 동시출현 5·10, NPMI 0.10·0.20, 노드별 상위 15·20, Leiden resolution 0.6·1.0·1.4, 시드 5 |
+| Leiden 지표 | 모듈러리티, 공동체 수, 고립 노드율, 최대 공동체 점유, 시드 간 NMI·ARI |
+| 문서 군집 | TF-IDF(사전 CORE·EXTENDED·EMERGING) + MiniBatch K-means, 가중치 INCLUDE 1 / REVIEW 0.5, 보존 핵심어 2개 미만 기사는 입력 제외 후 저신뢰 배정. K = 80·120·160·220, 시드 5 |
+| K-means 지표 | 표본 실루엣, 시드 간 ARI·구성원 Jaccard, 상위어 NPMI 일관성, 최대 군집 점유·Gini, 분야별 과반 군집 수(최솟값), 저관련·일반어·단일 기업 군집 비율, 잡음 탐침 분리율 |
+| 자동 제안 | 지표 순위 평균(Borda). 최종 선택은 정량지표와 연구자 기준 (decision_log) |
+| 결합 | 문서 군집 중심의 질량이 각 Leiden 공동체에 얼마나 실리는지(mass share), 코사인, 상위 20어 Jaccard. 최대 대응의 절반 이상 공동체가 더 있으면 하위 주제 후보, 최대 대응이 하위 25%면 `topic_review_flag=1` |
+
+잡음 탐침(청문회·후보자·모임 통장·부산 상어 등)은 **평가 전용**이며 군집 입력·등급에는 쓰지 않는다.
+산출물: `07_keyword_network_nodes/edges.parquet`, `07_leiden_communities.csv`, `07_document_clusters.parquet`, `07_topic_alignment.csv`,
+`07_topic_registry.csv`, `e4_topic_report.xlsx`, `e4_comparison_pack.jsonl`(LLM 비교 계층 입력), `e4_summary.json`.
 
 ## 4. 1차 검수 기준 (기획안 15.1 중 1차 범위)
 - 모든 실행에 run_manifest, 산출물 체크섬, 설정 해시가 남는다 (100%).

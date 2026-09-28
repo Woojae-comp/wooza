@@ -64,3 +64,22 @@ def test_half_vs_soft_difference_recorded():
     b = signal_row(soft, T * 0.8, RULES)["signal_type"]
     flag = int(a != b)
     assert a == "Growing" and b == "Insufficient" and flag == 1
+
+
+def test_left_censored_blocks_emerging():
+    T = np.full(18, 1000.0)
+    late = np.array([0.0] * 12 + [0, 2, 6, 10, 15, 22])      # 수집 뒤 새로 등장
+    early = np.array([1.0, 0, 0] + [0.0] * 9 + [0, 2, 6, 10, 15, 22])   # 첫 달에 이미 보임
+    s1 = signal_row(late, T, RULES)
+    s2 = signal_row(early, T, RULES)
+    assert not s1["left_censored"] and s1["signal_type"] == "Emerging"
+    assert s2["left_censored"] and s2["signal_type"] != "Emerging"
+
+
+def test_partial_month_excluded_from_confirmed_signal():
+    # 마지막(잠정) 달 기사량이 적어 떨어져 보여도 확정 판정은 직전 완전월 기준
+    T = np.full(24, 1000.0); T[-1] = 300
+    W = np.full(24, 20.0); W[-1] = 3
+    confirmed = signal_row(W, T, RULES, t=22)
+    assert confirmed["signal_type"] == "Established"
+    assert confirmed["weighted_df_last"] == 20.0

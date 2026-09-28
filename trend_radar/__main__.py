@@ -28,12 +28,28 @@ def main() -> None:
     e3.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
     e3.add_argument("--out", default="out")
     e3.add_argument("--min-df", type=int, default=5)
+    e4 = sub.add_parser("e4", help="E4: 주제 군집·네트워크 실험 (문서 K-means + NPMI·Leiden 결합) → 07_topic_registry.csv")
+    e4.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
+    e4.add_argument("--out", default="out")
     e5 = sub.add_parser("e5", help="E5a: 키워드 시계열 신호 실험 (trend 아님) → 06a_keyword_signal.csv")
     e5.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
     e5.add_argument("--out", default="out")
     h = sub.add_parser("html", help="radar.json에서 radar.html만 다시 만든다")
     h.add_argument("--out", default="out")
     a = ap.parse_args()
+    if a.cmd == "e4":
+        import json
+        from pathlib import Path
+
+        from .e0 import input_files
+        from .e4 import run_e4
+        from .load import read_raw
+        cfg = load_config()
+        files = input_files(a.input or cfg["input"]["paths"])
+        cfg["_input_files"] = files
+        s = run_e4(cfg, read_raw(files), Path(a.out))
+        print(json.dumps(s, ensure_ascii=False, indent=1, default=str))
+        return
     if a.cmd == "e5":
         import json
         from pathlib import Path

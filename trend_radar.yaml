@@ -207,7 +207,9 @@ e3:
 
 e5:
   # E5a 키워드 시계열 신호 (keyword_signal, trend 아님). 최종 유형은 E4 군집과 결합한 E5b에서 확정
+  # 마지막 달이 말일 전에 끝나면 잠정월(is_partial_month=1): 확정 판정은 직전 완전월 기준
   input_classes: [CORE, EXTENDED, EMERGING]
+  censor_months: 3             # 수집 첫 3개월 안에 등장 → left_censored (실제 최초 등장 모름, Emerging 금지)
   min_monthly_df: 5            # 월간 가중 문서빈도가 이 미만이면 증가율·Z로 유형을 주지 않음 (Insufficient)
   emerging_growth: 2.0         # 최근 3개월 평균 대비
   growing_ratio: 1.3           # 최근 6개월 비중 / 직전 6개월 비중
@@ -219,3 +221,23 @@ e5:
   sector_min_df: 3
   cross_min_sectors: 3
   cross_min_entropy: 0.6
+
+e4:
+  # E4 주제 군집·네트워크. 문서 K-means = 주제 기본 단위, NPMI·Leiden = 주제 구성 관계. 자동 선택은 Borda 순위 평균(제안)
+  concept_classes: [CORE, EXTENDED]            # 개념 네트워크 (개념어만)
+  extended_classes: [CORE, EXTENDED, EMERGING] # 개체 확장 네트워크 (개념어 + 작품·기업·인물·정책명)
+  general_max_z_pct: 0.5     # 허브 일반어 = 개념어 중 B 특이도 하위 50% 이면서
+  general_min_df_pct: 0.9    #              문서빈도 상위 10% → 네트워크에서 제외 (문서 군집에는 IDF로만 약화)
+  network_grid:
+    min_co: [5, 10]
+    npmi: [0.10, 0.20]
+    topk: [15, 20]
+    resolution: [0.6, 1.0, 1.4]
+  leiden_seeds: 5
+  k_grid: [80, 120, 160, 220]
+  kmeans_seeds: 5
+  min_keywords: 2            # 보존 핵심어 2개 미만 기사는 군집 입력 제외 → 가장 가까운 중심에 저신뢰로 배정
+  silhouette_sample: 8000
+  subtopic_ratio: 0.5        # 최대 대응 공동체 질량의 절반 이상인 공동체 → 하위 주제 후보
+  # 잡음 탐침 (평가 전용, E5a Event Spike에서 드러난 비콘텐츠 사건). 군집 입력·등급에는 쓰지 않음
+  noise_probes: [청문회, 후보자, 모임 통장, 부산 상어, 카카오 뱅크 앱]

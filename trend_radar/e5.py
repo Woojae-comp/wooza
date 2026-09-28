@@ -116,8 +116,11 @@ def run_lengths(active: np.ndarray) -> tuple[int, int]:
 
 
 def signal_row(W: np.ndarray, T: np.ndarray, rules: dict, t: int | None = None) -> dict:
-    """한 키워드의 월별 가중 빈도 W와 월별 가중 기사 합 T로 시점 t(기본: 마지막 달)의 지표와 유형."""
+    """한 키워드의 월별 가중 빈도 W와 월별 가중 기사 합 T로 시점 t(기본: 마지막 달)의 지표와 유형.
+    W[0]은 수집 첫 달이다. 첫 censor_months(기본 3)개월 안에 이미 등장했으면 left_censored (실제 최초 등장 시점 모름)
+    → Emerging을 주지 않는다."""
     t = len(W) - 1 if t is None else t
+    left_censored = bool((W[: rules.get("censor_months", 3)] >= 1).any())
     W, T = W[: t + 1], T[: t + 1]
     y = safe_share(W, T)
     L = len(W)
@@ -150,7 +153,7 @@ def signal_row(W: np.ndarray, T: np.ndarray, rules: dict, t: int | None = None) 
     elif burst_recent and burst_len <= rules.get("spike_max_months", 2) and \
             (pers12 < rules.get("spike_max_persistence", 0.5) or peak_dom >= rules.get("spike_peak_dominance", 0.5)):
         kind = "Event Spike"
-    elif not appeared_before and g_3m >= rules.get("emerging_growth", 2.0) and pers6 >= 0.5:
+    elif not left_censored and not appeared_before and g_3m >= rules.get("emerging_growth", 2.0) and pers6 >= 0.5:
         kind = "Emerging"
     elif ratio_6 >= rules.get("growing_ratio", 1.3) and pers12 >= 0.5 and rz >= 0:
         kind = "Growing"
@@ -165,7 +168,7 @@ def signal_row(W: np.ndarray, T: np.ndarray, rules: dict, t: int | None = None) 
             "first_month_idx": first, "appeared_before_12m": appeared_before, "peak_dominance_12m": peak_dom,
             "burst_recent_3m": burst_recent, "burst_months_12m": burst_len,
             **{f"burst_{k}_recent": bool(v[-3:].any()) for k, v in bursts.items()},
-            "weighted_df_last": float(W[-1]), "signal_type": kind}
+            "left_censored": left_censored, "weighted_df_last": float(W[-1]), "signal_type": kind}
 
 
 # ---------------------------------------------------------------- 실행
@@ -208,6 +211,11 @@ def run_e5a(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
 
     with run.stage("monthly") as st:
         months = month_axis(arts["date"])
+        # 불완전월: 마지막 기사일이 그 달의 말일이 아니면 잠정 (확정 판정·E5b 최종 유형에서 제외)
+        last_day = arts["date"].max()
+        partial = bool(last_day.day < last_day.days_in_month)
+        tc = len(months) - 1 - int(partial)          # 확정 판정 시점 (마지막 완전월)
+        cm = months[max(0, tc - 11): tc + 1]         # 최근 12개 완전월
         Wh, Th = monthly(Xk, arts["date"], half, months)
         Ws, Ts = monthly(Xk, arts["date"], soft, months)
         Wr, Tr = monthly(Xk, arts["date"], np.ones(len(arts)), months)
@@ -226,7 +234,7 @@ def run_e5a(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
             Wsec, Tsec = monthly(Xk, arts["date"], half * m, months)
             adj += Tsec.sum() * safe_share(Wsec, Tsec)
             wt.append(Tsec.sum())
-            sector_df[:, i] = Wsec[:, -12:].sum(1)
+            sector_df[:, i] = Wsec[:, max(0, tc - 11): tc + 1].sum(1)
         adj /= max(sum(wt), 1e-9)
         long = []
         share = safe_share(Wh, Th)
@@ -234,9 +242,9 @@ def run_e5a(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
             for m_i, m in enumerate(months):
                 if Wr[k, m_i] > 0:
                     long.append((kw, m, int(Wr[k, m_i]), round(float(Wh[k, m_i]), 2), round(float(share[k, m_i]), 3),
-                                 round(float(adj[k, m_i]), 3)))
+                                 round(float(adj[k, m_i]), 3), int(partial and m_i == len(months) - 1)))
         mon = pd.DataFrame(long, columns=["keyword", "month", "raw_doc_freq", "weighted_doc_freq",
-                                          "share_per_1000_articles", "sector_adjusted_share"])
+                                          "share_per_1000_articles", "sector_adjusted_share", "is_partial_month"])
         pm = run.dir / "06a_keyword_signal_monthly.parquet"
         mon.to_parquet(pm, index=False)
         run.artifact(pm, "keyword_signal_monthly", rows=len(mon))
@@ -244,12 +252,13 @@ def run_e5a(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
 
     with run.stage("signals") as st:
         # 편중도: 최근 12개월 해당 키워드 기사에서 상위 기업 점유율
-        recent = arts["date"].dt.to_period("M").astype(str).isin(months[-12:]).to_numpy()
+        recent = arts["date"].dt.to_period("M").astype(str).isin(cm).to_numpy()
         comp = arts["companies"].to_numpy()
         out = []
         for k, kw in enumerate(keep["keyword"]):
-            a = signal_row(Wh[k], Th, rules)
-            b = signal_row(Ws[k], Ts, rules)
+            a = signal_row(Wh[k], Th, rules, tc)
+            b = signal_row(Ws[k], Ts, rules, tc)
+            prov = signal_row(Wh[k], Th, rules)["signal_type"] if partial else a["signal_type"]
             rr = Xk[:, k].nonzero()[0]
             rr = rr[recent[rr] & (half[rr] > 0)]
             top_co, top_share = "", 0.0
@@ -265,6 +274,8 @@ def run_e5a(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
                 "keyword": kw, "keyword_id": row["keyword_id"], "class_auto": row["class_auto"], "entity_type": row["entity_type"],
                 **{k2: (round(v, 4) if isinstance(v, float) else v) for k2, v in a.items()},
                 "first_month": months[a["first_month_idx"]] if a["first_month_idx"] < len(months) else None,
+                "signal_asof": months[tc], "signal_type_provisional": prov,
+                "provisional_month": months[-1] if partial else None,
                 "signal_type_soft": b["signal_type"], "sensitivity_flag": int(a["signal_type"] != b["signal_type"]),
                 "sectors_active_12m": active, "sector_entropy_12m": round(ent, 3),
                 "cross_sector": bool(active >= rules.get("cross_min_sectors", 3) and ent >= rules.get("cross_min_entropy", 0.6)),
@@ -281,7 +292,7 @@ def run_e5a(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
         st["rows_out"] = len(sig)
 
     with run.stage("backtest") as st:
-        bt = backtest(e3_dir, keep, Wh, Th, months, rules)
+        bt = backtest(e3_dir, keep, Wh[:, : tc + 1], Th[: tc + 1], months[: tc + 1], rules)
         pb = run.dir / "06a_backtest.csv"
         bt.to_csv(pb, index=False, encoding="utf-8-sig")
         run.artifact(pb, "keyword_signal_backtest", rows=len(bt))
@@ -289,6 +300,14 @@ def run_e5a(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
 
     summary = {
         "e3_run_id": e3_run, "keywords": len(sig), "months": [months[0], months[-1]],
+        "signal_asof": months[tc], "partial_month": months[-1] if partial else None,
+        "last_article_date": str(last_day.date()),
+        "signal_counts_provisional": sig["signal_type_provisional"].value_counts().to_dict(),
+        "declining_recheck": {
+            "provisional_declining": int((sig["signal_type_provisional"] == "Declining").sum()),
+            "confirmed_declining": int((sig["signal_type"] == "Declining").sum()),
+            "both": int(((sig["signal_type_provisional"] == "Declining") & (sig["signal_type"] == "Declining")).sum())},
+        "left_censored": int(sig["left_censored"].sum()),
         "signal_counts": sig["signal_type"].value_counts().to_dict(),
         "signal_counts_soft": sig["signal_type_soft"].value_counts().to_dict(),
         "sensitivity_flag_rate": round(float(sig["sensitivity_flag"].mean()), 4),
@@ -332,7 +351,7 @@ def backtest(e3_dir: Path, keep: pd.DataFrame, W: np.ndarray, T: np.ndarray, mon
             if detect is None and s["signal_type"] in ("Emerging", "Growing", "Event Spike"):
                 detect = t
         final = kinds[-1]
-        always_present = ann == 0
+        always_present = ann < rules.get("censor_months", 3)   # left_censored 구간
         rows.append({
             "event_id": f"ev_{e.token}", "keyword_id": keep.iloc[k]["keyword_id"], "keyword": e.entity,
             "event_type": "work_title_mention (proxy)", "announcement_month": months[ann],
