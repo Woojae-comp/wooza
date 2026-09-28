@@ -16,7 +16,7 @@ python -m pytest tests/trend_radar
 ```
 
 키워드 정제 규칙은 자동 적용하지 않는다. 후보는 `out/review/lexicon_candidates.xlsx`,
-Claude의 제안은 `proposals/`, 승인한 규칙은 `lexicon.yaml`에 둔다. 원자료(`data/`)와 결과(`out/`)는 커밋하지 않는다.
+승인한 규칙은 `lexicon.yaml`(불용어·동의어·복합어)과 `trend_radar.yaml`(제외 태그·기업)에 둔다. 원자료(`data/`)와 결과(`out/`)는 커밋하지 않는다.
 
 ---
 

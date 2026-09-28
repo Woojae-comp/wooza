@@ -37,7 +37,7 @@ def _art_ids(o, out: set) -> None:
             _art_ids(v, out)
 
 
-def _slim(result: dict, top_profiles: int = 700) -> dict:
+def _slim(result: dict, top_profiles: int = 300) -> dict:
     """화면에 필요한 만큼만 남긴다 (전체는 radar.json과 tables/에 있다).
     목록·분야·군집·쌍에 나온 키워드 + 기사 수 상위 키워드의 프로파일만 싣는다."""
     r = dict(result)
@@ -67,7 +67,8 @@ def _slim(result: dict, top_profiles: int = 700) -> dict:
     r["profiles"] = _round(slim)
     ids: set[str] = set()
     _art_ids({k: v for k, v in r.items() if k != "articles"}, ids)
-    r["articles"] = {i: a for i, a in result["articles"].items() if i in ids}
+    # 화면용 기사는 요약을 줄인다 (앱 미리보기에서 열리도록 파일 크기를 줄이기 위함)
+    r["articles"] = {i: dict(a, s=a["s"][:100]) for i, a in result["articles"].items() if i in ids}
     meta = dict(r["meta"])
     meta.pop("config", None)
     r["meta"] = meta

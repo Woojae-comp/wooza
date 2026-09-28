@@ -14,9 +14,8 @@ python -m trend_radar run                       # → out/radar.html, out/tables
 python -m trend_radar run --input "경로/*.xlsx" --out out
 python -m trend_radar html --out out            # radar.json에서 화면만 다시 생성
 
-# 제안 정제 규칙 미리보기 (승인 전 비교용)
-python -m trend_radar run --config proposals/trend_radar.proposed.yaml \
-    --lexicon proposals/lexicon.proposed.yaml --out out_preview
+# 규칙 후보를 따로 시험할 때 (승인 전 비교용)
+python -m trend_radar run --config 다른설정.yaml --lexicon 다른규칙.yaml --out out_preview
 ```
 
 형태소 분석(Kiwi)은 `out/cache/`에 캐시한다. lexicon.yaml만 바꿔 다시 돌리면 형태소 분석을 건너뛴다.
@@ -48,8 +47,7 @@ python -m trend_radar run --config proposals/trend_radar.proposed.yaml \
 | `trend_radar/pipeline.py` | 2, 16, 19, 20장 | 전체 흐름, 트렌드 프로파일, 탐지 근거 문장, 대표 기사 |
 | `trend_radar/report.py`, `radar_template.html` | 17, 21장 | Trend Radar 화면 |
 | `trend_radar.yaml` | — | 분석 설정 (컬럼, 정제, 기간, 임계값) |
-| `lexicon.yaml` | 5장 | **사용자가 승인한** 불용어·동의어·복합어 (처음엔 비어 있음) |
-| `proposals/` | 5, 22장 | Claude가 후보를 검토해 만든 제안 (적용 안 됨) |
+| `lexicon.yaml` | 5장 | **사용자가 승인한** 불용어·동의어·복합어 (2026-09-28: 1차 후보 검토안 승인) |
 
 ---
 
@@ -65,8 +63,8 @@ python -m trend_radar run --config proposals/trend_radar.proposed.yaml \
    숫자를 0으로, 기업명을 @로 가린 형태가 20개 이상 기사에 나오면 분석 텍스트에서 뺀다.
    언론사 안내문("비리와 부당대우…제보", "인용 시 [YTN …] 명시"), 자동 생성 시세 기사 문형
    ("|중앙이코노미뉴스 ○○○ 기자|출처=네이버페이 증권 …"), 종목명 나열이 여기서 빠진다. 원문 요약은 `summary_raw`로 남는다.
-3. **제목 머리말 태그 제외** (기본 끔, `exclude_title_tags`). `[서울데이터랩]`, `[리스트]`, `[게임스톡]`처럼 시세·종목 나열만
-   전달하는 정형 기사. 사용자 승인 사항이라 제안만 `proposals/trend_radar.proposed.yaml`에 뒀다.
+3. **제목 머리말 태그 제외** (`exclude_title_tags`, 사용자 승인분만). `[서울데이터랩]`, `[리스트]`, `[게임스톡]`처럼 시세·종목 나열만
+   전달하는 정형 기사 36종 (2026-09-28 승인). 원인·사업 내용을 설명하는 `[특징주]`·`[더벨]` 등은 남긴다.
 4. **분석 단위**. 전체 = 전역기사ID 1회. 분야 = 전역기사ID + 분야 1회 (`분야목록`의 `·` `,` `|`를 모두 구분자로 봄, 11개 분야).
    기업 = 전역기사ID + 기업 (분야 간 교차 기사 계산과 '기업 한정' 판정에 씀).
 
