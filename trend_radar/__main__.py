@@ -20,9 +20,26 @@ def main() -> None:
     e0 = sub.add_parser("e0", help="E0: 스냅샷 등록 + 데이터 품질 점검 (01_data_quality.xlsx)")
     e0.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
     e0.add_argument("--out", default="out")
+    e2 = sub.add_parser("e2", help="E2: 기사 관련성 실험 (약한 지도학습, 앵커 평가) → 02_article_relevance.parquet")
+    e2.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
+    e2.add_argument("--out", default="out")
+    e2.add_argument("--llm-dir", default="out/llm", help="LLM 도전자 결과 폴더 (relevance_pred.csv)")
     h = sub.add_parser("html", help="radar.json에서 radar.html만 다시 만든다")
     h.add_argument("--out", default="out")
     a = ap.parse_args()
+    if a.cmd == "e2":
+        from pathlib import Path
+
+        from .e0 import input_files
+        from .e2 import run_e2
+        from .load import read_raw
+        cfg = load_config()
+        files = input_files(a.input or cfg["input"]["paths"])
+        cfg["_input_files"] = files
+        s = run_e2(cfg, read_raw(files), Path(a.out), Path(a.llm_dir))
+        import json
+        print(json.dumps(s, ensure_ascii=False, indent=1))
+        return
     if a.cmd == "e0":
         from .e0 import run_e0
         run_e0(load_config(), a.input, a.out)

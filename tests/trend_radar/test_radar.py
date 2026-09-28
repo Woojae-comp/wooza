@@ -224,6 +224,25 @@ def test_layers_split_content_and_market():
     assert lab["content"].iloc[-1]
 
 
+def test_label_model_recovers_classes_from_one_sided_rules():
+    from trend_radar.e2 import label_model, otsu
+
+    rng = np.random.default_rng(0)
+    y = rng.random(3000) < 0.4
+    def lf(cond_rate_pos, cond_rate_neg, pol):
+        fire = np.where(y, rng.random(3000) < cond_rate_pos, rng.random(3000) < cond_rate_neg)
+        return np.where(fire, pol, 0)
+    L = pd.DataFrame({"pos_a": lf(0.6, 0.02, 1), "pos_b": lf(0.5, 0.05, 1),
+                      "neg_a": lf(0.03, 0.7, -1), "neg_b": lf(0.1, 0.5, -1), "neg_c": lf(0.05, 0.4, -1)})
+    p, st = label_model(L)
+    acc = ((p >= 0.5) == y).mean()
+    assert acc > 0.85  # 한쪽 방향 규칙만으로도 뒤집히지 않고 클래스를 복원한다
+    assert abs(st.attrs["prior"] - 0.4) < 0.1
+    assert (st["estimated_precision"] > 0.6).all()
+    t = otsu(np.concatenate([rng.normal(0.1, 0.05, 500), rng.normal(0.9, 0.05, 500)]).clip(0, 1))
+    assert 0.3 < t < 0.7
+
+
 def test_include_sectors_drop(raw):
     cfg = load_config(overrides={"cleaning": {"include_sectors": ["게임", "방송 및 영상"], "related_tier": False}})
     c = build_corpus(raw, cfg)
