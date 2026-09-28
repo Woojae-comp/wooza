@@ -57,6 +57,10 @@ def main() -> None:
     rv.add_argument("--seed", type=int, default=20260929)
     rm = sub.add_parser("review-merge", help="저장된 LLM 응답(model_responses/)을 검사·병합하고 비교 보고서 작성")
     rm.add_argument("--dir", required=True, help="out/review/review_YYYYMMDD_HHMMSS")
+    rb = sub.add_parser("review-batches", help="남은 검토 표본으로 다음 입력 묶음 생성 (현재 가이드 버전)")
+    rb.add_argument("--dir", required=True)
+    rb.add_argument("--split", default="dev", choices=["dev", "holdout"])
+    rb.add_argument("--size", type=int, default=30)
     h = sub.add_parser("html", help="radar.json에서 radar.html만 다시 만든다")
     h.add_argument("--out", default="out")
     a = ap.parse_args()
@@ -71,6 +75,13 @@ def main() -> None:
         files = input_files(a.input or cfg["input"]["paths"])
         cfg["_input_files"] = files
         print(json.dumps(build_review_sample(cfg, read_raw(files), Path(a.out), a.seed), ensure_ascii=False, indent=1, default=str))
+        return
+    if a.cmd == "review-batches":
+        import json
+        from pathlib import Path
+
+        from .review import make_batches
+        print(json.dumps(make_batches(Path(a.dir), a.split, a.size), ensure_ascii=False, indent=1))
         return
     if a.cmd == "review-merge":
         import json

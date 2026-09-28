@@ -22,13 +22,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-GUIDE_VERSION = "1.0"
-OUT_COLS = ["article_id", "content_relevance", "market_focus", "review_class", "content_evidence", "exclusion_evidence",
-            "reason_short", "needs_more_context"]
+GUIDE_VERSION = "1.1"
+OUT_COLS = ["article_id", "content_relevance", "market_focus", "review_class", "content_type", "content_evidence",
+            "exclusion_evidence", "reason_short", "needs_more_context"]
+OPTIONAL_COLS = {"content_type"}          # v1.0 응답(열 없음)도 병합
 ALLOWED = {"content_relevance": {"SUBSTANTIVE", "INCIDENTAL", "NONE", "UNCERTAIN"},
            "market_focus": {"YES", "NO", "UNCERTAIN"},
            "review_class": {"CONTENT", "MARKET", "OTHER", "UNRESOLVED"},
-           "needs_more_context": {"YES", "NO"}}
+           "needs_more_context": {"YES", "NO"},
+           "content_type": {"WORK_ACTIVITY", "DISTRIBUTION", "POLICY", "EVENT_ISSUE", "NONE", ""}}
 UPLOAD_GUIDE = """# 업로드 순서 (검토 절차 명세 v1.0)
 
 ## 1차 — 기존 판정을 가리고 기사 근거 검토
@@ -267,6 +269,7 @@ def build_review_sample(cfg: dict, raw: pd.DataFrame, out_root: Path, seed: int 
     (d / "upload" / "stage2" / "model_comparison_pack.md").write_text(pack, encoding="utf-8")
     hashes["model_comparison_pack.md"] = sha256_file(d / "upload" / "stage2" / "model_comparison_pack.md")
     sample.drop(columns=["summary"]).to_csv(d / "internal" / "sample_manifest.csv", index=False, encoding="utf-8-sig")
+    sample[["gid", "title", "summary"]].to_csv(d / "internal" / "article_text.csv", index=False, encoding="utf-8-sig")
     pd.DataFrame(columns=["file", "service", "displayed_model", "used_at_kst", "settings_visible", "batch", "rows_returned",
                           "retries", "retry_reason", "manual_edits"]).to_csv(d / "model_responses" / "responses_log.csv", index=False,
                                                                                 encoding="utf-8-sig")
@@ -339,7 +342,7 @@ def parse_response(text: str) -> tuple[pd.DataFrame, list[str]]:
     if header is None:
         errors.append("헤더 행을 찾지 못함")
         return pd.DataFrame(columns=OUT_COLS), errors
-    missing = [c for c in OUT_COLS if c not in header]
+    missing = [c for c in OUT_COLS if c not in header and c not in OPTIONAL_COLS]
     if missing:
         errors.append(f"필수 열 없음: {missing}")
     df = pd.DataFrame(rows, columns=header)
@@ -361,9 +364,12 @@ def evidence_found(evidence: str, source: str) -> bool | None:
 
 def validate(df: pd.DataFrame, expected_ids: set, source: dict) -> pd.DataFrame:
     df = df.copy()
+    for c in OPTIONAL_COLS:
+        if c not in df:
+            df[c] = ""
     for c, allowed in ALLOWED.items():
         df[c] = df[c].astype(str).str.strip().str.upper()
-        df[f"invalid_{c}"] = ~df[c].isin(allowed)
+        df[f"invalid_{c}"] = ~df[c].replace("NAN", "").isin(allowed)
     df["unknown_id"] = ~df["article_id"].isin(expected_ids)
     df["duplicate_id"] = df["article_id"].duplicated(keep=False)
     df["content_evidence_found"] = [evidence_found(e, source.get(i, "")) for e, i in zip(df["content_evidence"], df["article_id"])]
@@ -496,3 +502,44 @@ def comparison_report(L: pd.DataFrame, W: pd.DataFrame, models: list[str], issue
     out += [f"| {k} | {v} |" for k, v in W["priority"].value_counts().sort_index().items() if k]
     out += ["", "## 6. 연구자 결정", "", "(researcher_review 열과 decision_log에 기록. 이 보고서는 운영 변경을 지시하지 않는다.)", ""]
     return "\n".join(out)
+
+
+def make_batches(review_dir: Path, split: str = "dev", batch_size: int = 30, seed: int = 0) -> dict:
+    """아직 묶음이 없는 기사로 다음 입력 묶음을 만든다 (현재 가이드·지시문 버전). 대표·진단을 섞어 추출 사유가 드러나지 않게 한다."""
+    from .runlog import ROOT
+
+    review_dir = Path(review_dir)
+    man_p = review_dir / "internal" / "sample_manifest.csv"
+    man = pd.read_csv(man_p, dtype=str)
+    man["batch"] = man["batch"].fillna("")
+    todo = man[(man["split"] == split) & (man["batch"] == "")].sample(frac=1, random_state=seed)
+    done = sorted(b for b in man["batch"].unique() if b)
+    start = int(done[-1].split("_")[1]) + 1 if done else 1
+    arts_src = review_dir / "internal" / "article_text.csv"
+    text = pd.read_csv(arts_src, dtype=str).set_index("gid")
+    docs = ROOT / "docs" / "review"
+    stage = review_dir / "upload" / f"stage1_v{GUIDE_VERSION}"
+    stage.mkdir(parents=True, exist_ok=True)
+    for f in ("annotation_guide.md", "review_prompt.md"):
+        shutil.copy(docs / f, stage / f)
+    made, hashes = [], {}
+    for k in range(int(np.ceil(len(todo) / batch_size))):
+        ids = todo["gid"].iloc[k * batch_size:(k + 1) * batch_size]
+        b = f"batch_{start + k:03d}"
+        man.loc[man["gid"].isin(ids), "batch"] = b
+        inp = pd.DataFrame({"article_id": ids.to_numpy(), "title": text.loc[ids, "title"].map(clean_cell).to_numpy(),
+                            "summary": text.loc[ids, "summary"].map(clean_cell).to_numpy()})
+        pi = stage / f"review_input_{b}.tsv"
+        inp.to_csv(pi, sep="\t", index=False)
+        pd.DataFrame({c: (ids.to_numpy() if c == "article_id" else "") for c in OUT_COLS}).to_csv(
+            stage / f"review_output_template_{b}.tsv", sep="\t", index=False)
+        hashes[pi.name] = sha256_file(pi)
+        made.append(b)
+    man.to_csv(man_p, index=False, encoding="utf-8-sig")
+    mf = review_dir / "review_manifest.json"
+    m = json.loads(mf.read_text(encoding="utf-8"))
+    m.setdefault("batches_added", []).append({"batches": made, "split": split, "guide_version": GUIDE_VERSION,
+                                               "guide_sha256": sha256_file(docs / "annotation_guide.md"),
+                                               "prompt_stage1_sha256": sha256_file(docs / "review_prompt.md"), "input_file_sha256": hashes})
+    mf.write_text(json.dumps(m, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+    return {"batches": made, "articles": int(len(todo)), "dir": str(stage)}

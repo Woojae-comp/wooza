@@ -88,3 +88,15 @@ def test_merge_responses_end_to_end(tmp_path):
     issues = pd.read_csv(d / "merged" / "parse_issues.csv")
     assert issues["issue"].str.contains("누락 ID a3").any()
     assert (d / "e2_llm_comparison_report.md").read_text(encoding="utf-8").count("LLM 참고 판정") >= 1
+
+
+def test_v10_responses_without_content_type_still_merge():
+    text = "article_id\tcontent_relevance\tmarket_focus\treview_class\tcontent_evidence\texclusion_evidence\treason_short\tneeds_more_context\n" \
+           "a1\tSUBSTANTIVE\tNO\tCONTENT\t신작\t\tx\tNO\n"
+    df, errs = parse_response(text)
+    assert errs == [] and df.loc[0, "content_type"] == ""
+    text11 = "article_id\tcontent_relevance\tmarket_focus\treview_class\tcontent_type\tcontent_evidence\texclusion_evidence\treason_short\tneeds_more_context\n" \
+             "a1\tSUBSTANTIVE\tNO\tCONTENT\tEVENT_ISSUE\t압수수색\t\tx\tNO\n"
+    df2, errs2 = parse_response(text11)
+    v = validate(df2, {"a1"}, {"a1": "컴투스 압수수색"})
+    assert errs2 == [] and not v.loc[0, "invalid_content_type"]
