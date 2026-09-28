@@ -49,6 +49,10 @@ def main() -> None:
     e23b = sub.add_parser("e23b", help="E2.3b: 라벨 모델 보정 진단 (근거 계열 통합, G3 vs H2 × 사전분포 L/M/H)")
     e23b.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
     e23b.add_argument("--out", default="out")
+    e23c = sub.add_parser("e23c", help="E2.3c: 사건 이슈 계열 보강 (H2 + 콘텐츠 기업 사건 근거 + REVIEW 하한), 검토 표본 v1.1 합의와 대조")
+    e23c.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
+    e23c.add_argument("--out", default="out")
+    e23c.add_argument("--review-dir", help="out/review/review_YYYYMMDD_HHMMSS (병합된 LLM 판정과 대조)")
     for p_ in (e3, e4, e41, e42, e5):
         p_.add_argument("--use-candidate", action="store_true", help="승인 전 후보 E2(e2.candidate_run_id)로 실행")
     rv = sub.add_parser("review-sample", help="E2 비교·검토 표본 600건 추출 + 초기 60건 업로드 파일 (LLM API 호출 없음)")
@@ -89,6 +93,19 @@ def main() -> None:
 
         from .review import merge_responses
         print(json.dumps(merge_responses(Path(a.dir)), ensure_ascii=False, indent=1, default=str))
+        return
+    if a.cmd == "e23c":
+        import json
+        from pathlib import Path
+
+        from .e0 import input_files
+        from .e23c import run_e23c
+        from .load import read_raw
+        cfg = load_config()
+        files = input_files(a.input or cfg["input"]["paths"])
+        cfg["_input_files"] = files
+        s = run_e23c(cfg, read_raw(files), Path(a.out), Path(a.review_dir) if a.review_dir else None)
+        print(json.dumps({k: v for k, v in s.items() if k != "comparison"}, ensure_ascii=False, indent=1, default=str))
         return
     if a.cmd == "e23b":
         import json
