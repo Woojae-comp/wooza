@@ -24,6 +24,9 @@ def main() -> None:
     e2.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
     e2.add_argument("--out", default="out")
     e2.add_argument("--llm-dir", default="out/llm", help="LLM 도전자 결과 폴더 (relevance_pred.csv)")
+    e22 = sub.add_parser("e22", help="E2.2: 관련성 학습 방식 비교 (base/softA/softB × 검색 기업명 처리) → 선정 모델 02_article_relevance.parquet")
+    e22.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
+    e22.add_argument("--out", default="out")
     e3 = sub.add_parser("e3", help="E3: 핵심어 사전 실험 (A Strict / B Half / C Soft) → 03_keyword_dictionary.csv")
     e3.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
     e3.add_argument("--out", default="out")
@@ -94,6 +97,19 @@ def main() -> None:
         cfg["_input_files"] = files
         s = run_e5a(cfg, read_raw(files), Path(a.out))
         print(json.dumps(s, ensure_ascii=False, indent=1))
+        return
+    if a.cmd == "e22":
+        import json
+        from pathlib import Path
+
+        from .e0 import input_files
+        from .e22 import run_e22
+        from .load import read_raw
+        cfg = load_config()
+        files = input_files(a.input or cfg["input"]["paths"])
+        cfg["_input_files"] = files
+        s = run_e22(cfg, read_raw(files), Path(a.out))
+        print(json.dumps({k: v for k, v in s.items() if k != "variants"}, ensure_ascii=False, indent=1, default=str))
         return
     if a.cmd == "e3":
         import json
