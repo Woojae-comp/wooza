@@ -17,9 +17,16 @@ def main() -> None:
     r.add_argument("--lexicon", help="승인된 정제 규칙 (기본 lexicon.yaml)")
     r.add_argument("--out", help="출력 폴더 (기본 out)")
     r.add_argument("--no-candidates", action="store_true", help="불용어·동의어·복합어 후보 생략")
+    e0 = sub.add_parser("e0", help="E0: 스냅샷 등록 + 데이터 품질 점검 (01_data_quality.xlsx)")
+    e0.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
+    e0.add_argument("--out", default="out")
     h = sub.add_parser("html", help="radar.json에서 radar.html만 다시 만든다")
     h.add_argument("--out", default="out")
     a = ap.parse_args()
+    if a.cmd == "e0":
+        from .e0 import run_e0
+        run_e0(load_config(), a.input, a.out)
+        return
     if a.cmd == "html":
         import json
         from pathlib import Path
