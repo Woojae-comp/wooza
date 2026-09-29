@@ -222,6 +222,16 @@ e5:
   cross_min_sectors: 3
   cross_min_entropy: 0.6
 
+e5b:
+  # E5b 주제 트렌드 (고정 모델 월별 배정) + E4.3 계보. 신호 규칙은 e5 블록을 그대로 쓴다
+  e42_run: null               # 비우면 LSA 임베딩이 있는 최신 E4.2 (가중 민감도 실행 제외)
+  e5a_run: null               # 비우면 최신 E5a (가중 민감도 실행 제외)
+  entity_driven_share: 0.5    # 최근 12개월 주제 가중의 절반 이상이 한 기업 기사 → entity_driven 표시
+  window_months: 6            # 계보 창 길이
+  step_months: 3              # 창 이동 간격
+  min_topic_weight: 10        # 창 K = 창 안 가중 기사 이 이상인 고정 주제 수
+  null_quantile: 0.95         # 이웃 창 연결 기준 = 전체 쌍 코사인의 이 분위
+
 e4:
   # E4 주제 군집·네트워크. 문서 K-means = 주제 기본 단위, NPMI·Leiden = 주제 구성 관계. 자동 선택은 Borda 순위 평균(제안)
   concept_classes: [CORE, EXTENDED]            # 개념 네트워크 (개념어만)

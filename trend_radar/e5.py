@@ -301,6 +301,7 @@ def run_e5a(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
         st["rows_out"] = len(bt)
 
     summary = {
+        "relevance_weighting": (cfg.get("relevance_weighting") or {}).get("mode", "half"),
         "e3_run_id": e3_run, "keywords": len(sig), "months": [months[0], months[-1]],
         "signal_asof": months[tc], "partial_month": months[-1] if partial else None,
         "last_article_date": str(last_day.date()),

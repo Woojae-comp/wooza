@@ -43,6 +43,9 @@ def main() -> None:
     e5 = sub.add_parser("e5", help="E5a: 키워드 시계열 신호 실험 (trend 아님) → 06a_keyword_signal.csv")
     e5.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
     e5.add_argument("--out", default="out")
+    e5b = sub.add_parser("e5b", help="E5b: 주제 트렌드 확정 (고정 모델 월별 배정 + 주제 신호 + E4.3 계보) → 06b_topic_trend.csv")
+    e5b.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
+    e5b.add_argument("--out", default="out")
     e23 = sub.add_parser("e23", help="E2.3: 3분류(CONTENT/MARKET/OTHER) 라벨 모델 비교 → 통과 시 후보 E2")
     e23.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
     e23.add_argument("--out", default="out")
@@ -95,6 +98,19 @@ def main() -> None:
 
         from .review import merge_responses
         print(json.dumps(merge_responses(Path(a.dir)), ensure_ascii=False, indent=1, default=str))
+        return
+    if a.cmd == "e5b":
+        import json
+        from pathlib import Path
+
+        from .e0 import input_files
+        from .e5b import run_e5b
+        from .load import read_raw
+        cfg = load_config()
+        files = input_files(a.input or cfg["input"]["paths"])
+        cfg["_input_files"] = files
+        s = run_e5b(cfg, read_raw(files), Path(a.out))
+        print(json.dumps({k: v for k, v in s.items() if k != "window_purity"}, ensure_ascii=False, indent=1, default=str))
         return
     if a.cmd == "e23c":
         import json

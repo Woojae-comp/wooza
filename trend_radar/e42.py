@@ -621,6 +621,10 @@ def run_e42(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
             "anchor_market": am[iu].astype(int), "anchor_content": acn[iu].astype(int)})
         asg.to_parquet(run.dir / "07c_article_assignment.parquet", index=False)
         run.artifact(run.dir / "07c_article_assignment.parquet", "article_assignment", rows=len(asg))
+        # E5b 계보용: 같은 LSA 공간의 기사 임베딩과 기본 모델 중심 (창별 재군집이 고정 모델과 같은 공간을 쓰게)
+        np.savez_compressed(run.dir / "07c_lsa_embedding.npz", Z=Zall.astype(np.float32), gid=gids[iu].astype(str),
+                            centers=km.cluster_centers_.astype(np.float32), label=lab)
+        run.artifact(run.dir / "07c_lsa_embedding.npz", "lsa_embedding", rows=len(iu))
         pack = []
         for _, row in treg.iterrows():
             pack.append({"type": "topic", **{k: row[k] for k in (
@@ -658,6 +662,7 @@ def run_e42(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
     small = [sectors.index(s) for s in ctx_small if s in sectors]
     wsz = pd.Series(w[ok]).groupby(lab[ok]).sum()
     summary = {
+        "relevance_weighting": (cfg.get("relevance_weighting") or {}).get("mode", "half"),
         "e3_run_id": e3_run, "base_model": base_model,
         "node_types": nt[cand]["node_type"].value_counts().to_dict(),
         "networks": nets.to_dict("records"),
