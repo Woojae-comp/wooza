@@ -433,7 +433,7 @@ def analyze(cfg: dict, corpus: Corpus, arts: pd.DataFrame, texts: list[str], tok
         review = out / "review"
         review.mkdir(exist_ok=True)
         comp_set = set(companies) | {token_form(n) for n in names}
-        sw = cand.stopword_candidates(dt, arts, series, sector_rows, net_all.centrality, comp_set)
+        sw = cand.stopword_candidates(dt, arts, series, core_sector_rows, net_all.centrality, comp_set)   # dt는 핵심 분야 행만
         syn = cand.synonym_candidates(dt, arts, texts)
         cmp_ = cand.compound_candidates(tokens, texts, arts)
         with pd.ExcelWriter(review / "lexicon_candidates.xlsx") as xw:
