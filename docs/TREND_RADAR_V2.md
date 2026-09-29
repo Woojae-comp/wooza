@@ -450,7 +450,7 @@ REVIEW 처리: 후보 추출·문서빈도·C-value·지속성·엔트로피·�
 - 산출: `06b_topic_trend.csv`, `06b_topic_trend_monthly.parquet`, `07d_topic_lineage.csv`, `07d_window_purity.csv`, `e5b_summary.json`.
 
 ### E5b 저빈도 주제 처리 (2026-09-29, run_20260929_102724_003e)
-- **자동 규칙 (데이터가 바뀌어도 사람이 다시 정하지 않음)**: 월 단위 판정 → 월 기사 부족(Insufficient)이면 같은 규칙을 **분기 단위**로 다시 적용
+- **자동 규칙 (연구자 확정 2026-09-29, 데이터가 바뀌어도 사람이 다시 정하지 않음)**: 월 단위 판정 → 월 기사 부족(Insufficient)이면 같은 규칙을 **분기 단위**로 다시 적용
   (`signal_resolution=quarter`, 창 길이·개월 기준을 기간 수로 환산: `signal_row(per_year=4)`, 분기 합계 5건 기준) → 분기로도 부족하면 **Low volume**
   (트렌드 판정 제외, 목록 유지). 월 단위 결과는 이전과 동일(per_year=12 기본값).
 - 결과(잡음 제외 95개): 월 판정 59 / 분기 판정 24 / 저빈도 12.
