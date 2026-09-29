@@ -73,3 +73,20 @@ def test_signal_row_per_year_default_is_monthly():
     rng = np.random.default_rng(1)
     W, T = rng.poisson(8, 30).astype(float), np.full(30, 200.0)
     assert signal_row(W, T, {}) == signal_row(W, T, {}, per_year=12)
+
+
+def test_lineage_stability_on_separated_clusters():
+    """잘 떨어진 군집이 그대로 이어지는 자료: 시드를 바꿔도 안정 사건이 없고, 같은 창 재군집 기준도 0에 가깝다."""
+    from trend_radar.e5b import lineage_stability
+
+    rng = np.random.default_rng(0)
+    centers = np.eye(6) * 5
+    n = 600
+    lab = rng.integers(0, 6, n)
+    Z = centers[lab] + rng.normal(0, 0.1, (n, 6))
+    months = [f"2024-{m:02d}" for m in range(1, 13)]
+    li = {"Z": Z, "mon": rng.integers(0, 12, n), "ok": np.ones(n, bool), "w": np.ones(n),
+          "fixed": np.array([f"tp_{k:03d}" for k in lab])}
+    stab, counts, summ = lineage_stability(li, months, 11, {"window_months": 6, "step_months": 3, "min_topic_weight": 5}, [0, 1, 2])
+    assert (stab["stable_events"] == "").all() if len(stab) else True
+    assert summ["same_window_null_mean"]["new"] == 0 and counts["continued"].min() == 6

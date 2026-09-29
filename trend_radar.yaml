@@ -230,6 +230,7 @@ e5b:
   window_months: 6            # 계보 창 길이
   step_months: 3              # 창 이동 간격
   min_topic_weight: 10        # 창 K = 창 안 가중 기사 이 이상인 고정 주제 수
+  lineage_seeds: 5            # 계보 안정성: 창 군집 시드 수, 과반 시드에서 나온 사건만 안정 사건
   link_quantile: 0.05         # 이웃 창 연결 기준 = 서로 최선 짝인 쌍 코사인의 이 하위 분위 (전체 쌍 95% 분위는 0.23으로 너무 느슨했음)
 
 e4:

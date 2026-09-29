@@ -12,7 +12,9 @@
 4) 계보(E4.3): window_months 창을 step_months 간격으로 밀며, 같은 LSA 공간에서 창 안 기사만 K-means (K = 창에서 가중 min_topic_weight 이상인 고정 주제 수).
    이웃 창 군집을 중심 코사인으로 잇는다. 연결 기준은 서로 최선 짝인 쌍(분명한 이어짐) 코사인 분포의 하위 분위(link_quantile).
    사건: continued(1:1) / split(1:다) / merged(다:1) / new(선행 없음) / ended(후행 없음). 창 군집은 가중 다수 고정 주제에 대응(purity 기록).
-   고정 주제별로 최근 창의 사건을 lineage_recent로 붙인다 → 고정 모델이 최근 구조 변화를 놓치는지 점검.
+   고정 주제별로 최근 창의 사건을 붙인다 → 고정 모델이 최근 구조 변화를 놓치는지 점검.
+   안정성: 창 군집을 시드 lineage_seeds개로 다시 만들어 과반 시드에서 나온 사건만 lineage_recent(안정 사건)로 쓴다 (한 시드라도 나온 사건은 lineage_any_seed).
+   무작위성 기준: 최근 창을 시드만 바꿔 재군집해 서로 이었을 때 생기는 사건 수 → 실제 창 이동의 사건 수가 이보다 얼마나 많은지(excess_over_null).
 """
 from __future__ import annotations
 
@@ -120,63 +122,121 @@ def lineage_events(n_a: int, n_b: int, links: list[tuple[int, int, float]]) -> d
     return dict(ev)
 
 
-def run_lineage(emb: dict, asg: pd.DataFrame, months: list[str], tc: int, rules: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
-    from sklearn.cluster import KMeans
-
-    size, step = rules.get("window_months", 6), rules.get("step_months", 3)
-    minw, q = rules.get("min_topic_weight", 10.0), rules.get("link_quantile", 0.05)
+def lineage_inputs(emb: dict, asg: pd.DataFrame, months: list[str]) -> dict:
     a = asg.set_index("gid").loc[emb["gid"]]
     mon = pd.to_datetime(a["date"]).dt.to_period("M").astype(str).map({m: i for i, m in enumerate(months)}).to_numpy()
-    ok = a["assignment_confidence"].isin(CONF_OK).to_numpy()
-    w, fixed = a["weight_half"].to_numpy(float), a["topic_id"].to_numpy()
-    Z = emb["Z"]
-    wins = windows(months, tc, size, step)
+    return {"Z": emb["Z"], "mon": mon, "ok": a["assignment_confidence"].isin(CONF_OK).to_numpy(),
+            "w": a["weight_half"].to_numpy(float), "fixed": a["topic_id"].to_numpy()}
+
+
+def fit_window(li: dict, s: int, e: int, minw: float, seed: int) -> tuple[np.ndarray, list[tuple]]:
+    """창 [s, e] 기사만 같은 LSA 공간에서 K-means. K = 창 안 가중 minw 이상 고정 주제 수. 군집별 (가중 다수 고정 주제, 순도, 가중)."""
+    from sklearn.cluster import KMeans
+
+    r = np.where(li["ok"] & (li["mon"] >= s) & (li["mon"] <= e))[0]
+    w, fixed = li["w"][r], li["fixed"][r]
+    K = max(int((pd.Series(w).groupby(fixed).sum() >= minw).sum()), 2)
+    km = KMeans(n_clusters=K, random_state=seed, n_init=3).fit(li["Z"][r], sample_weight=w)
+    maj = []
+    for c in range(K):
+        m = km.labels_ == c
+        share = pd.Series(w[m]).groupby(fixed[m]).sum().sort_values(ascending=False)
+        maj.append((share.index[0], float(share.iloc[0] / share.sum()), float(w[m].sum())))
+    return km.cluster_centers_, maj
+
+
+def step_rows(A: dict, B: dict, thr: float, latest: bool) -> list[dict]:
+    ev = lineage_events(len(A["centers"]), len(B["centers"]), link_windows(A["centers"], B["centers"], thr))
+    rows = []
+    for kind, items in ev.items():
+        for it in items:
+            i, j = it if kind == "continued" else ((it, None) if kind in ("ended", "split") else (None, it))
+            src = A["major"][i] if i is not None else (None, None, None)
+            dst = B["major"][j] if j is not None else (None, None, None)
+            rows.append({"from_window": A["window"], "to_window": B["window"], "event": kind,
+                         "from_cluster": i, "to_cluster": j, "from_fixed_topic": src[0], "from_purity": src[1],
+                         "to_fixed_topic": dst[0], "to_purity": dst[1], "weight": dst[2] if dst[2] is not None else src[2],
+                         "is_latest_step": latest})
+    return rows
+
+
+def run_lineage(li: dict, months: list[str], tc: int, rules: dict, seed: int = 0) -> tuple[pd.DataFrame, pd.DataFrame, list[dict], float]:
+    size, step = rules.get("window_months", 6), rules.get("step_months", 3)
+    minw, q = rules.get("min_topic_weight", 10.0), rules.get("link_quantile", 0.05)
     clus = []
-    for k, (s, e) in enumerate(wins):
-        r = np.where(ok & (mon >= s) & (mon <= e))[0]
-        tw = pd.Series(w[r]).groupby(fixed[r]).sum()
-        K = max(int((tw >= minw).sum()), 2)
-        km = KMeans(n_clusters=K, random_state=0, n_init=3).fit(Z[r], sample_weight=w[r])
-        maj = []
-        for c in range(K):
-            rc = r[km.labels_ == c]
-            share = pd.Series(w[rc]).groupby(fixed[rc]).sum().sort_values(ascending=False)
-            maj.append((share.index[0], float(share.iloc[0] / share.sum()), float(w[rc].sum())))
-        clus.append({"window": f"{months[s]}~{months[e]}", "centers": km.cluster_centers_, "major": maj})
+    for s, e in windows(months, tc, size, step):
+        C, maj = fit_window(li, s, e, minw, seed)
+        clus.append({"window": f"{months[s]}~{months[e]}", "span": (s, e), "centers": C, "major": maj})
     # 연결 기준: 서로 최선 짝인 쌍(분명한 이어짐) 코사인 분포의 하위 분위 — 이어졌다고 하려면 전형적인 이어짐만큼은 닮아야 한다
     mb = np.concatenate([mutual_best(cos(A["centers"], B["centers"])) for A, B in zip(clus, clus[1:])]) if len(clus) > 1 else np.array([1.0])
     thr = float(np.quantile(mb, q))
     rows = []
     for k, (A, B) in enumerate(zip(clus, clus[1:])):
-        links = link_windows(A["centers"], B["centers"], thr)
-        ev = lineage_events(len(A["centers"]), len(B["centers"]), links)
-        for kind, items in ev.items():
-            for it in items:
-                i, j = it if kind == "continued" else ((it, None) if kind in ("ended", "split") else (None, it))
-                src = A["major"][i] if i is not None else (None, None, None)
-                dst = B["major"][j] if j is not None else (None, None, None)
-                rows.append({"from_window": A["window"], "to_window": B["window"], "event": kind,
-                             "from_cluster": i, "to_cluster": j, "from_fixed_topic": src[0], "from_purity": src[1],
-                             "to_fixed_topic": dst[0], "to_purity": dst[1], "weight": dst[2] if dst[2] is not None else src[2],
-                             "is_latest_step": k == len(clus) - 2})
-    lin = pd.DataFrame(rows)
+        rows += step_rows(A, B, thr, k == len(clus) - 2)
     purity = pd.DataFrame([{"window": c["window"], "clusters": len(c["major"]),
                             "weighted_purity": round(float(np.average([m[1] for m in c["major"]], weights=[m[2] for m in c["major"]])), 4),
                             "link_threshold": round(thr, 4)} for c in clus])
-    return lin, purity
+    return pd.DataFrame(rows), purity, clus, thr
 
 
-def lineage_recent(lin: pd.DataFrame) -> dict[str, str]:
-    """고정 주제별 최근 창 사건 (continued 외)."""
+def topic_events(lin: pd.DataFrame, latest_only: bool = True) -> dict[str, set]:
+    """고정 주제별 사건 집합 (continued 외)."""
     if lin.empty:
         return {}
-    last = lin[lin["is_latest_step"] & (lin["event"] != "continued")]
+    last = lin[(lin["is_latest_step"] if latest_only else True) & (lin["event"] != "continued")]
     out = collections.defaultdict(set)
     for _, r in last.iterrows():
         t = r["to_fixed_topic"] if r["event"] in ("new", "merged") else r["from_fixed_topic"]
         if t:
             out[t].add(r["event"])
-    return {t: ";".join(sorted(v)) for t, v in out.items()}
+    return out
+
+
+def lineage_recent(lin: pd.DataFrame) -> dict[str, str]:
+    """고정 주제별 최근 창 사건 (continued 외)."""
+    return {t: ";".join(sorted(v)) for t, v in topic_events(lin).items()}
+
+
+def null_events(li: dict, span: tuple[int, int], rules: dict, seeds: list[int], thr: float) -> dict[str, float]:
+    """같은 창을 시드만 바꿔 다시 군집해 이었을 때 생기는 사건 수 = 군집 무작위성만으로 생기는 사건 (창 쌍 평균)."""
+    minw = rules.get("min_topic_weight", 10.0)
+    fits = [fit_window(li, span[0], span[1], minw, s)[0] for s in seeds]
+    tot, n = collections.Counter(), 0
+    for a in range(len(fits)):
+        for b in range(a + 1, len(fits)):
+            ev = lineage_events(len(fits[a]), len(fits[b]), link_windows(fits[a], fits[b], thr))
+            tot.update({k: len(v) for k, v in ev.items()})
+            n += 1
+    return {k: tot[k] / max(n, 1) for k in ("continued", "split", "merged", "new", "ended")}
+
+
+def lineage_stability(li: dict, months: list[str], tc: int, rules: dict, seeds: list[int]) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    """시드별 계보를 다시 만들고 (1) 주제별 최근 사건이 몇 개 시드에서 나오는지, (2) 같은 창 재군집만으로 생기는 사건 수(무작위성 기준)를 비교.
+    안정 사건 = 과반 시드에서 나온 사건."""
+    per_seed, step_counts, thr0, last_span = [], [], None, None
+    for s in seeds:
+        lin, _, clus, thr = run_lineage(li, months, tc, rules, s)
+        thr0 = thr if thr0 is None else thr0
+        last_span = clus[-1]["span"]
+        per_seed.append(topic_events(lin))
+        c = lin[lin["is_latest_step"]]["event"].value_counts()
+        step_counts.append({"seed": s, "link_threshold": round(thr, 4), **{k: int(c.get(k, 0)) for k in ("continued", "split", "merged", "new", "ended")}})
+    topics = sorted(set().union(*[set(p) for p in per_seed]))
+    rows = []
+    for t in topics:
+        cnt = collections.Counter(ev for p in per_seed for ev in p.get(t, set()))
+        stable = sorted(k for k, v in cnt.items() if v > len(seeds) / 2)
+        rows.append({"topic_id": t, "seeds": len(seeds), **{f"n_{k}": cnt.get(k, 0) for k in ("split", "merged", "new", "ended")},
+                     "stable_events": ";".join(stable), "any_seed_events": ";".join(sorted(cnt))})
+    null = null_events(li, last_span, rules, seeds, thr0)
+    counts = pd.DataFrame(step_counts)
+    obs = counts[["split", "merged", "new", "ended"]].mean().to_dict()
+    summary = {"seeds": seeds, "latest_step_mean": {k: round(v, 1) for k, v in obs.items()},
+               "same_window_null_mean": {k: round(v, 1) for k, v in null.items()},
+               "excess_over_null": {k: round(obs[k] - null.get(k, 0), 1) for k in obs},
+               "topics_with_stable_event": int(sum(bool(r["stable_events"]) for r in rows)),
+               "topics_with_any_event": len(rows)}
+    return pd.DataFrame(rows), counts, summary
 
 
 # ---------------------------------------------------------------- 실행
@@ -230,8 +290,14 @@ def run_e5b(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
         st["rows_out"] = len(topics)
 
     with run.stage("lineage") as st:
-        lin, purity = run_lineage(emb, asg, months, tc, rules)
-        recent = lineage_recent(lin)
+        li = lineage_inputs(emb, asg, months)
+        lin, purity, _, _ = run_lineage(li, months, tc, rules, seed=0)
+        seeds = list(range(rules.get("lineage_seeds", 5)))
+        stab, seed_counts, stab_sum = lineage_stability(li, months, tc, rules, seeds)
+        stab.to_csv(run.dir / "07d_lineage_stability.csv", index=False, encoding="utf-8-sig")
+        seed_counts.to_csv(run.dir / "07d_lineage_seed_counts.csv", index=False, encoding="utf-8-sig")
+        recent = stab.set_index("topic_id")["stable_events"].to_dict() if len(stab) else {}
+        recent_any = stab.set_index("topic_id")["any_seed_events"].to_dict() if len(stab) else {}
         lin.to_csv(run.dir / "07d_topic_lineage.csv", index=False, encoding="utf-8-sig")
         purity.to_csv(run.dir / "07d_window_purity.csv", index=False, encoding="utf-8-sig")
         run.artifact(run.dir / "07d_topic_lineage.csv", "topic_lineage", rows=len(lin))
@@ -289,7 +355,7 @@ def run_e5b(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
                 "cross_sector": bool(active >= rules.get("cross_min_sectors", 3) and ent >= rules.get("cross_min_entropy", 0.6)),
                 "top_company_12m": top_co, "top_company_share_12m": round(top_n / max(ww.sum(), 1e-9), 3),
                 "entity_driven": bool(top_n / max(ww.sum(), 1e-9) >= rules.get("entity_driven_share", 0.5)),
-                "keyword_support": support, "lineage_recent": recent.get(t, ""),
+                "keyword_support": support, "lineage_recent": recent.get(t, ""), "lineage_any_seed": recent_any.get(t, ""),
             })
         out = pd.DataFrame(rows).sort_values(["noise_excluded", "trend_type", "weighted_articles_12m"], ascending=[True, True, False])
         out.to_csv(run.dir / "06b_topic_trend.csv", index=False, encoding="utf-8-sig")
@@ -310,6 +376,7 @@ def run_e5b(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
                "sensitivity_flag": int(keep["sensitivity_flag"].sum()), "cross_sector": int(keep["cross_sector"].sum()),
                "entity_driven": int(keep["entity_driven"].sum()),
                "lineage_events_latest": lin[lin["is_latest_step"]]["event"].value_counts().to_dict() if len(lin) else {},
+               "lineage_stability": stab_sum,
                "window_purity": purity.to_dict("records")}
     (run.dir / "e5b_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     append_jsonl(REGISTRY / "experiment_registry.jsonl", {
