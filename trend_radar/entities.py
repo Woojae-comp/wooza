@@ -76,7 +76,9 @@ def protected_entities(arts: pd.DataFrame, market_words: set[str], min_articles:
         words = set(re.split(r"\s+", x))
         # 종목군 표현(게임주, 엔터주)은 시장 구문
         stockish = len(x) >= 3 and x.endswith("주") and " " not in x
-        if conc < min_concentration or words & market_words or stockish or len(_space_free(x)) < 2 or re.match(r"^\d", x):
+        # 쉼표로 이어진 나열('컴투스, 신작')은 작품명이 아니라 제목 속 인용 조각
+        listing = "," in x
+        if conc < min_concentration or words & market_words or stockish or listing or len(_space_free(x)) < 2 or re.match(r"^\d", x):
             continue
         is_entity, protect = entity_status(x, kiwi)
         if not is_entity:

@@ -236,6 +236,8 @@ def analyze(cfg: dict, corpus: Corpus, arts: pd.DataFrame, texts: list[str], tok
 
     log("상태 분류 (전체)")
     st = status_frame(dt, arts, all_rows, win, cfg, company_X, companies)
+    # 기업명 키워드는 탐색 조건으로 두고, '확대·부상·성장·확산·연결' 목록의 제목으로 쓰지 않는다 (별도 목록 companies_rising)
+    st["is_company"] = st["keyword"].isin(co_words)
     dif = diffusion(dt, arts, core_sector_rows, win, cfg)
     n_sig_recent = dif["sig_recent"].sum(1)
     n_sig_first = dif["sig_first"].sum(1)
@@ -331,7 +333,7 @@ def analyze(cfg: dict, corpus: Corpus, arts: pd.DataFrame, texts: list[str], tok
             "first_seen": str(ktx.loc[w, "first_seen"]), "last_seen": str(ktx.loc[w, "last_seen"]),
             "qoq": _f(ktx.loc[w].get("qoq_share_change")), "yoy": _f(ktx.loc[w].get("yoy_share_change")),
             "status": statuses,
-            "company": {"top": s["top_company"], "share": float(s["top_company_share"]), "n": int(s["n_companies"]),
+            "company": {"top": s["top_company"] or None, "share": _f(s["top_company_share"]), "n": int(s["n_companies"]),
                         "specific": bool(s["company_specific"])},
             "recent_share": float(s["recent_share"]), "base_share": float(s["base_share"]), "ratio": float(s["ratio"]),
             "recent_label": f"{win.recent_q[0]}~{win.recent_q[-1]}", "base_label": f"{win.base_q[0]}~{win.base_q[-1]}",
@@ -504,18 +506,21 @@ def assemble(cfg, corpus, arts, win, dt, st, stx, profiles, dif, sectors, net_al
     overall = {
         # 확산만으로는 '확대'가 아니다: 비중도 늘어야 한다
         "rising": pick((st["Growing"] | st["Emerging"] | (st["Spreading"] & (st["ratio"] >= 1.2))) & sig3
-                       & ~st["Declining"] & ~st["company_specific"],
+                       & ~st["Declining"] & ~st["company_specific"] & ~st["is_company"],
                        "recent_share"),
-        "established": pick(st["Established"], "mean_share", 30),
+        "established": pick(st["Established"] & ~st["is_company"], "mean_share", 30),
+        # 기업별 보도 비중 증가: 기업 안의 작품·사건을 찾는 탐색 출발점 (산업 변화 제목 아님)
+        "companies_rising": pick((st["Growing"] | st["Emerging"] | (st["ratio"] >= 1.3)) & st["is_company"], "recent_share", 30),
     }
-    cross = pick(sig3 & ~st["company_specific"] & (st["ratio"] >= 1.0) & st["keyword"].map(lambda w: w in profiles and sum(
+    nc = ~st["is_company"]
+    cross = pick(sig3 & nc & ~st["company_specific"] & (st["ratio"] >= 1.0) & st["keyword"].map(lambda w: w in profiles and sum(
         a in ("↑", "↑↑") for a in profiles[w]["diffusion"]["arrows"].values()) >= 2), "sectors_recent", 40)
-    emerging = pick(st["Emerging"], "ratio", 40)
-    growing = pick(st["Growing"], "ratio", 40)
+    emerging = pick(st["Emerging"] & nc, "ratio", 40)
+    growing = pick(st["Growing"] & nc, "ratio", 40)
     declining = pick(st["Declining"], "ratio", 30, asc=True)
     event = pick(st["Event-driven"], "peak_multiple", 30)
-    spreading = pick(st["Spreading"], "sectors_recent", 30)
-    converging = pick(st["Converging"], "ratio", 30)
+    spreading = pick(st["Spreading"] & nc, "sectors_recent", 30)
+    converging = pick(st["Converging"] & nc, "ratio", 30)
     # 기사가 많은(산업적으로 중요한) 키워드부터. 겹침 순으로 두면 맥락이 흐린 일반어가 앞에 온다
     s_idx = stru[stru["structural_change"]].sort_values("recent_df", ascending=False)
     structural = [w for w in s_idx.index if w in prof][:60]

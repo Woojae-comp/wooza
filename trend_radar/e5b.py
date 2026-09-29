@@ -68,6 +68,36 @@ def resolve_signal(Wm: np.ndarray, Tm: np.ndarray, tc: int, rules: dict) -> tupl
     return sq, "low_volume"
 
 
+def norm_title(t: str) -> str:
+    import re as _re
+    return _re.sub(r"[^0-9A-Za-z가-힣]", "", _re.sub(r"\[[^\]]*\]|\([^)]*\)", "", str(t))).lower()
+
+
+def evidence_articles(asg: pd.DataFrame, col: str, topic: str, months: list[str], tc: int, summaries: pd.Series,
+                      n: int = 5, window: int = 6) -> list[dict]:
+    """판정 근거 기사: 판정 기간(확정월까지 최근 window개월) 안의 배정 기사만. HIGH 먼저, 같은 기간이면 중심 유사도 순,
+    제목 정규화로 재전송·중복 보도는 한 건만. 부족하면 최근 12개월로 넓힌다 (선정 사유에 기록). 확정월 이후 기사는 쓰지 않는다."""
+    mon = asg["date"].dt.to_period("M").astype(str)
+    base = asg[(asg[col].fillna("") == topic) & asg["assignment_confidence"].isin(CONF_OK)]
+    out, seen = [], set()
+    for span, why in ((window, f"판정 기간 최근 {window}개월"), (12, "판정 기간 최근 12개월 (최근 6개월 부족)")):
+        win = set(months[max(0, tc - span + 1): tc + 1])
+        cand = base[mon.loc[base.index].isin(win)].assign(_h=lambda d: (d["assignment_confidence"] != "HIGH").astype(int)) \
+            .sort_values(["_h", "centroid_similarity"], ascending=[True, False])
+        for r in cand.itertuples():
+            key = norm_title(r.title)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({"gid": r.gid, "date": str(pd.Timestamp(r.date).date()), "title": r.title,
+                        "summary": str(summaries.get(r.gid, ""))[:200], "e2_weight": float(r.weight_half),
+                        "e2_decision": "INCLUDE" if r.weight_half >= 1 else "REVIEW", "assignment_confidence": r.assignment_confidence,
+                        "centroid_similarity": float(r.centroid_similarity), "selection_reason": f"{why}·배정 신뢰도·중심 유사도 순, 중복 제목 제외"})
+            if len(out) >= n:
+                return out
+    return out
+
+
 def entropy_norm(x: np.ndarray) -> float:
     x = x[x > 0]
     if len(x) <= 1:
@@ -309,7 +339,9 @@ def run_e5b(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
         comp_of = corpus.article_company.groupby("gid")["company"].agg(list)
         recent12 = asg["date"].dt.to_period("M").astype(str).isin(months[max(0, tc - 11): tc + 1]).to_numpy()
         okc = asg["assignment_confidence"].isin(CONF_OK).to_numpy()
-        kw_type = sig.set_index("keyword")["signal_type"].to_dict()
+        # 주제 키워드 지지: 트렌드 신호로 쓸 수 있는 키워드(개념·작품)만 센다 (기업명·일반어·시세·서식어 제외)
+        sig_ok = sig[sig["trend_eligible"]] if "trend_eligible" in sig.columns else sig
+        kw_type = sig_ok.set_index("keyword")["signal_type"].to_dict()
         reg_i = reg.set_index("topic_id")
         rows = []
         for i, t in enumerate(topics):
@@ -329,6 +361,10 @@ def run_e5b(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
             ent = entropy_norm(sw_)
             top_co, top_n = co_w.most_common(1)[0] if co_w else ("", 0.0)
             s_conf, resolution = resolve_signal(W[i], T, tc, rules)
+            # Stable은 잔여 범주: 6개월 비가 성장·쇠퇴 기준을 넘었지만 다른 조건(Robust Z·지속)을 못 넘은 '방향 혼재'와 '변화 작음'을 구분
+            r6 = s_conf["ratio_6m"]
+            note = ("방향 혼재" if (r6 >= rules.get("growing_ratio", 1.3) or r6 <= rules.get("declining_ratio", 0.7)) else "변화 작음") \
+                if s_conf["signal_type"] == "Stable" else ""
             s_prov = signal_row(W[i], T, rules)
             s_soft, _ = resolve_signal(Ws[i], Ts, tc, rules)
             r = reg_i.loc[t] if t in reg_i.index else pd.Series(dtype=object)
@@ -340,10 +376,13 @@ def run_e5b(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
             rows.append({
                 "topic_id": t, "topic_type_e42": r.get("topic_type"), "top_keywords": ", ".join(kws),
                 "trend_type": "Noise" if noise else ("Low volume" if resolution == "low_volume" else s_conf["signal_type"]),
-                "signal_resolution": resolution,
+                "signal_resolution": resolution, "trend_note": note,
                 "signal_type": s_conf["signal_type"], "signal_type_provisional": s_prov["signal_type"],
                 "signal_type_soft": s_soft["signal_type"], "sensitivity_flag": int(s_conf["signal_type"] != s_soft["signal_type"]),
                 "noise_excluded": int(noise), "noise_reason_codes": r.get("noise_reason_codes"),
+                "noise_basis": ";".join(x for x in [("E4.2 유형 NOISE_CANDIDATE" if r.get("topic_type") == "NOISE_CANDIDATE" else ""),
+                                                  (f"잡음 사유 {r.get('noise_reason_codes')}" if str(r.get("noise_reason_codes") or "").strip()
+                                                   and str(r.get("noise_reason_codes")) != "nan" else "")] if x),
                 "left_censored": s_conf["left_censored"], "signal_asof": months[tc], "provisional_month": months[-1] if partial else "",
                 "growth_3m": round(s_conf["growth_3m"], 3), "ratio_6m": round(s_conf["ratio_6m"], 3), "robust_z": round(s_conf["robust_z"], 3),
                 "persistence_12m": round(s_conf["persistence_12m"], 3), "burst_months_12m": s_conf["burst_months_12m"],
@@ -358,6 +397,11 @@ def run_e5b(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
                 "keyword_support": support, "lineage_recent": recent.get(t, ""), "lineage_any_seed": recent_any.get(t, ""),
             })
         out = pd.DataFrame(rows).sort_values(["noise_excluded", "trend_type", "weighted_articles_12m"], ascending=[True, True, False])
+        summaries = corpus.articles.set_index("gid")["summary"]
+        ev = [dict(topic_id=t, rank=j + 1, **e) for t in topics
+              for j, e in enumerate(evidence_articles(asg, "rescue_topic_id" if t.startswith("tr_") else "topic_id", t, months, tc, summaries))]
+        pd.DataFrame(ev).to_csv(run.dir / "06b_topic_evidence.csv", index=False, encoding="utf-8-sig")
+        run.artifact(run.dir / "06b_topic_evidence.csv", "topic_evidence", rows=len(ev))
         out.to_csv(run.dir / "06b_topic_trend.csv", index=False, encoding="utf-8-sig")
         run.artifact(run.dir / "06b_topic_trend.csv", "topic_trend", rows=len(out))
         mon = pd.DataFrame(W, index=topics, columns=months).rename_axis("topic_id").reset_index() \
@@ -365,6 +409,15 @@ def run_e5b(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
         mon["share_per_1000"] = np.round(safe_share(mon["weighted_articles"].to_numpy(),
                                                     mon["month"].map(dict(zip(months, T))).to_numpy()), 4)
         mon["is_partial_month"] = (mon["month"] == months[-1]) & partial
+        # 재현용: 원 기사 수(HIGH·LOW 배정), 가중 기사 수 W, 분모 N(같은 달 유입 기사 전체 가중 — 미배정·거부 포함), 판정 포함 여부
+        _, R, _ = topic_months(asg.assign(_one=1.0), months, "_one")
+        if len(r_asg):
+            _, Rr, _ = topic_months(r_asg.assign(_one=1.0), months, "_one", "rescue_topic_id")
+            R = np.vstack([R, Rr])
+        mon["raw_articles"] = pd.DataFrame(R, index=topics, columns=months).stack().reindex(
+            pd.MultiIndex.from_frame(mon[["topic_id", "month"]])).to_numpy()
+        mon["month_total_weighted"] = mon["month"].map(dict(zip(months, T)))
+        mon["in_signal_window"] = mon["month"].map({m: i <= tc for i, m in enumerate(months)})
         mon.to_parquet(run.dir / "06b_topic_trend_monthly.parquet", index=False)
         st["rows_out"] = len(out)
 
@@ -423,6 +476,12 @@ def topic_payload(out_root: Path, run_id: str | None = None, n_articles: int = 4
             out.append({"t": title, "d": str(pd.Timestamp(dt).date()) if dt is not None else ""})
         return out
 
+    evp = d / "06b_topic_evidence.csv"
+    ev = pd.read_csv(evp, keep_default_na=False) if evp.exists() else pd.DataFrame(columns=["topic_id"])
+    ev_by = {t: g.sort_values("rank").to_dict("records") for t, g in ev.groupby("topic_id")}
+    asof_i = months.index(summ["signal_asof"]) if summ["signal_asof"] in months else len(months) - 1
+    periods = {"recent6": [months[max(0, asof_i - 5)], months[asof_i]], "base6": [months[max(0, asof_i - 11)], months[max(0, asof_i - 6)]]}
+
     def stable_lineage(v: str) -> list[str]:
         # split·merged는 군집 무작위성과 구별되지 않아 화면에 쓰지 않는다 (E4.3 안정성 결과)
         return [e for e in str(v).split(";") if e in ("new", "ended")]
@@ -440,8 +499,12 @@ def topic_payload(out_root: Path, run_id: str | None = None, n_articles: int = 4
                      "company": r["top_company_12m"], "company_share": num(r["top_company_share_12m"]),
                      "support": num(r["keyword_support"]), "sens": int(r["sensitivity_flag"]), "soft": r["signal_type_soft"],
                      "prov": r["signal_type_provisional"], "lineage": stable_lineage(r.get("lineage_recent", "")),
+                     "lineage_all": [e for e in str(r.get("lineage_recent", "")).split(";") if e],
+                     "note": r.get("trend_note", ""), "noise_basis": r.get("noise_basis", ""),
+                     "evidence": [{"t": e["title"], "d": e["date"], "s": e["summary"], "dec": e["e2_decision"], "conf": e["assignment_confidence"]}
+                                  for e in ev_by.get(tid, [])],
                      "series": [round(float(x), 3) for x in series.loc[tid].tolist()] if tid in series.index else [],
                      "arts": reps(tid)})
     return {"run_id": run_id, "e42_run": summ["e42_run"], "asof": summ["signal_asof"], "partial": summ.get("partial_month"),
-            "months": months, "counts": summ.get("trend_type_counts", {}), "resolution": summ.get("signal_resolution_counts", {}),
+            "months": months, "periods": periods, "counts": summ.get("trend_type_counts", {}), "resolution": summ.get("signal_resolution_counts", {}),
             "lineage": summ.get("lineage_stability", {}), "rows": rows}

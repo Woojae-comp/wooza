@@ -225,6 +225,8 @@ e5:
   sector_min_df: 3
   cross_min_sectors: 3
   cross_min_entropy: 0.6
+  # 방송 안내·바이라인 같은 서식어 → keyword_role=format (신호 목록 제외, 값 보존)
+  format_patterns: ["방송 ?일시", "PD$", "^PD ", "기자$", "앵커$", "진행자$"]
 
 e5b:
   # E5b 주제 트렌드 (고정 모델 월별 배정) + E4.3 계보. 신호 규칙은 e5 블록을 그대로 쓴다

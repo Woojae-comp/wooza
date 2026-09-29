@@ -161,7 +161,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const pct = (x, d = 2) => x == null ? "–" : (x * 100).toFixed(d) + "%";
 const fx = (x, d = 1) => x == null || !isFinite(x) ? "–" : Number(x).toFixed(d);
 
-const STATUS_KO = {"Emerging":"부상","Growing":"성장","Established":"정착","Spreading":"확산","Converging":"융합","Declining":"쇠퇴","Event-driven":"이벤트성"};
+const STATUS_KO = {"Emerging":"신규 부상","Growing":"보도 증가","Established":"지속 보도","Spreading":"관련 업종 증가","Converging":"연관어 연결 증가","Declining":"보도 감소","Event-driven":"단기 집중"};
 
 const LAYER_NOTE = {
   content: "작품·서비스·IP·플랫폼·공연·기술·이용자 이야기가 중심인 기사. 기업이 스쳐 간 업계 동향 기사도 콘텐츠 성향이 뚜렷하면 포함합니다. 주가·실적·공시 어휘는 이 층에서 뺐습니다.",
@@ -199,7 +199,7 @@ function kwCard(k, extra = "") {
   const p = P[k]; if (!p) return "";
   const ev = (p.evidence || []).slice(0, 2).map(e => `<div title="${esc(e)}">${esc(e)}</div>`).join("");
   return `<div class="card kw" tabindex="0" data-k="${esc(k)}">
-    <div class="top"><div class="name">${esc(k)}</div><div class="nums">비중 ${pct(p.recent_share)} <span class="muted">(${fx(p.ratio)}배)</span><br>분야 ${p.diffusion.recent}/${p.diffusion.n_sectors}</div></div>
+    <div class="top"><div class="name">${esc(k)}</div><div class="nums">비중 ${pct(p.recent_share)} <span class="muted">(${fx(p.ratio)}배)</span><br><span title="기사 분야 = 연결 기업의 업종 합집합">관련 업종 ${p.diffusion.recent}/${p.diffusion.n_sectors}</span></div></div>
     ${tagsHtml(p)}${spark(p.m_share)}<div class="ev">${ev}</div>${extra}</div>`;
 }
 function artHtml(id) {
@@ -220,8 +220,8 @@ function kwGrid(list, id, sort = "share") {
 
 // ---------------------------------------------------------------- 탭
 const TABS = [
-  ["overall", "A 산업 전체"], ["sector", "B 분야별"], ["cross", "C 분야 간 공통"], ["conv", "D 융합 신호"],
-  ["emerging", "E 부상·성장·쇠퇴"], ["struct", "F 구조 변화"], ["time", "시계열 군집"], ["explore", "키워드 탐색"], ["review", "정제 검토"],
+  ["overall", "A 산업 전체"], ["sector", "B 분야별"], ["cross", "C 여러 업종 공통"], ["conv", "D 연관어 연결"],
+  ["emerging", "E 보도 증감"], ["struct", "F 구조 변화"], ["time", "시계열 군집"], ["explore", "키워드 탐색"], ["review", "정제 검토"],
 ];
 if (ALL.topics) TABS.splice(1, 0, ["topics", "주제 트렌드"]);
 const render = {};
@@ -229,9 +229,13 @@ const render = {};
 render.overall = () => {
   const cl = D.networks.recent.clusters;
   const ch = Object.fromEntries(D.networks.cluster_changes.filter(c => c.cluster != null).map(c => [c.cluster, c]));
-  return `<div class="intro">지금 콘텐츠산업 전반에서 확대되는 이슈: 성장·부상·확산 상태이면서 최근 12개월 3개 이상 분야에서 유의미하게 등장한 키워드. 한 기업 검색에 집중된 키워드(기업 한정)는 뺐습니다. 각 카드의 근거 지표를 확인하고 최종 판단하세요.</div>
-  <h2>확대되는 이슈</h2>${kwGrid(D.overall.rising, "g-rising")}
-  <h3>지속 핵심 이슈 (Established)</h3>${kwGrid(D.overall.established, "g-est")}
+  const cr = D.overall.companies_rising || [];
+  return `<div class="intro">보도 비중이 늘어난 키워드: 최근 ${esc(M.recent_q.join("~"))} 대 직전 ${esc(M.base_q[0])}~${esc(M.base_q.at(-1))}의 <b>분기 보도 비중</b>(키워드가 나온 기사 / 이 층 전체 기사) 비교입니다. 산업의 실물 성장·쇠퇴가 아니라 언론 보도의 증감입니다.
+    최근 12개월 3개 이상 업종의 기업 기사에 등장한 키워드만 올렸습니다 (업종 = 연결 기업의 업종이며 기사 내용상 분야 확산과 다를 수 있음). 기업명과 한 기업 검색에 몰린 키워드는 뺐습니다.
+    키워드는 하나의 사건이 아닐 수 있습니다: 카드를 열어 대표 기사가 같은 이야기인지 확인하세요. 사건·주제 단위는 '주제 트렌드' 탭.</div>
+  <h2>보도 비중이 늘어난 키워드</h2>${kwGrid(D.overall.rising, "g-rising")}
+  ${cr.length ? `<h3>기업별 보도 비중 증가 <span class="muted" style="font-weight:400">(탐색 출발점 — 기업 안의 작품·사건은 카드와 주제 탭에서 확인)</span></h3>${kwGrid(cr, "g-co")}` : ""}
+  <h3>지속 보도 키워드 (Established)</h3>${kwGrid(D.overall.established, "g-est")}
   <h3>최근 12개월 이슈 군집 (${esc(D.networks.recent.label)})</h3>
   <div class="note">Louvain 군집. 이름은 중심 키워드로 만든 후보이며 확정이 아닙니다. 변화는 첫 12개월(${esc(D.networks.first.label)}) 군집과 키워드 겹침으로 대응시킨 결과입니다.</div>
   <div class="grid" style="margin-top:8px">${cl.map(c => clusterCard(c, ch[c.id])).join("")}</div>`;
@@ -249,7 +253,7 @@ function clusterCard(c, chg) {
 }
 
 // ---------------------------------------------------------------- 주제 트렌드 (E5b)
-const TT_KO = {"Emerging":"부상","Growing":"성장","Established":"정착","Stable":"유지","Declining":"쇠퇴","Event Spike":"급등","Low volume":"저빈도","Noise":"잡음 후보","Insufficient":"자료 부족"};
+const TT_KO = {"Emerging":"신규 부상","Growing":"보도 비중 증가","Established":"지속 보도","Stable":"유지","Declining":"보도 비중 감소","Event Spike":"단기 집중","Low volume":"최근 자료 부족","Noise":"잡음 후보","Insufficient":"자료 부족"};
 const TT_ORDER = ["Growing","Emerging","Event Spike","Established","Stable","Declining","Low volume"];
 const RES_KO = {month:"월 판정", quarter:"분기 판정", low_volume:"저빈도"};
 let topicType = "all";
@@ -267,16 +271,20 @@ function topicCard(r, T) {
   if (r.res !== "month" && r.type !== "Noise") tags.push(`<span class="tag res" title="월 기사가 부족해 3개월 묶음으로 판정">${RES_KO[r.res]}</span>`);
   if (r.lineage.includes("new")) tags.push(`<span class="tag Emerging" title="최근 6개월 창에서 새로 생긴 군집 (시드 과반)">새 흐름</span>`);
   if (r.lineage.includes("ended")) tags.push(`<span class="tag Declining" title="최근 6개월 창에서 이어지지 않은 군집 (시드 과반)">흐름 종료</span>`);
-  if (r.cross) tags.push(`<span class="tag Spreading" title="최근 12개월 ${r.sectors}개 분야">분야 확산</span>`);
+  if (r.note) tags.push(`<span class="tag res" title="${r.note === "방향 혼재" ? "6개월 비는 증가·감소 기준을 넘었지만 Robust Z·지속 조건을 못 넘음" : "6개월 비 변화가 작음"}">${esc(r.note)}</span>`);
+  if (r.cross) tags.push(`<span class="tag Spreading" title="최근 12개월 ${r.sectors}개 업종의 기업 기사 (연결 기업의 업종 기준, 기사 내용상 확산과 다를 수 있음)">관련 업종 다수</span>`);
   if (r.entity) tags.push(`<span class="tag company" title="최근 12개월 주제 기사의 ${Math.round((r.company_share || 0) * 100)}%">기업 중심 · ${esc(r.company)}</span>`);
   if (r.sens) tags.push(`<span class="tag res" title="p_rel 가중으로 다시 판정하면 ${esc(TT_KO[r.soft] || r.soft)}">가중 민감</span>`);
   const kws = r.kws.map(w => `<span class="pill ${P[w] ? "link" : ""}" data-k="${esc(w)}">${esc(w)}</span>`).join("");
+  const ev = (r.evidence || []).map(a => `<div class="art"><b>${esc(a.t)}</b><div class="m">${esc(a.d)} · E2 ${esc(a.dec)} · 배정 ${esc(a.conf)}</div><div class="s">${esc(a.s)}</div></div>`).join("");
   const arts = r.arts.map(a => `<div class="art"><b>${esc(a.t)}</b><div class="m">${esc(a.d)}</div></div>`).join("");
-  const nums = r.type === "Noise" ? `<span class="muted">${esc(r.noise_codes || r.e42)}</span>` :
-    `최근 12개월 가중 ${fx(r.w12, 0)}건 · 6개월 비 ${fx(r.ratio6, 2)}배 · 12개월 지속 ${pct(r.pers12, 0)}${r.support != null ? ` · 키워드 상승 ${pct(r.support, 0)}` : ""}`;
+  const P6 = T.periods || {};
+  const nums = r.type === "Noise" ? `<span class="muted">${esc(r.noise_basis || r.noise_codes || r.e42)}</span>` :
+    `최근 12개월 가중 ${fx(r.w12, 0)}건 · 보도 비중 ${fx(r.ratio6, 2)}배 <span class="muted">(${esc((P6.recent6 || []).join("~"))} 대 직전 6개월)</span> · 12개월 지속 ${pct(r.pers12, 0)}${r.support != null ? ` · 키워드 상승 ${pct(r.support, 0)}` : ""}`;
   return `<div class="card topic"><div class="top" style="display:flex;justify-content:space-between;gap:8px"><b>${esc(r.kws.slice(0, 3).join(" · "))}</b><span class="muted" style="white-space:nowrap">${esc(r.id)}</span></div>
     <div class="tags">${tags.join("")}</div>${tspark(r.series, T.partial)}<div class="meta">${nums}</div>
-    <div class="kws">${kws}</div>${arts ? `<details><summary class="muted">대표 기사</summary>${arts}</details>` : ""}</div>`;
+    <div class="kws">${kws}</div>${ev ? `<details><summary class="muted">판정 근거 기사 (${esc((P6.recent6 || []).join("~"))} 안)</summary>${ev}</details>` : `<div class="note">판정 기간 안의 근거 기사 없음</div>`}
+    ${arts ? `<details><summary class="muted">전체 기간 대표 기사 (E4.2)</summary>${arts}</details>` : ""}</div>`;
 }
 render.topics = () => {
   const T = ALL.topics, rows = T.rows.filter(r => !r.noise), noise = T.rows.filter(r => r.noise);
@@ -285,13 +293,15 @@ render.topics = () => {
   const shown = (topicType === "all" ? rows : rows.filter(r => r.type === topicType))
     .sort((a, b) => TT_ORDER.indexOf(a.type) - TT_ORDER.indexOf(b.type) || (b.w12 || 0) - (a.w12 || 0));
   const L = T.lineage || {};
-  return `<div class="intro">E4.2 주제 ${T.rows.length}개(고정 모델)의 월별 기사 비중으로 판정한 주제 트렌드입니다. 위의 층(콘텐츠·자본시장) 선택과 무관하게 E2 관련성 판정 기사 전체를 씁니다. 확정 판정 기준월 ${esc(T.asof)}${T.partial ? ` (${esc(T.partial)}은 불완전월이라 제외)` : ""}.
+  return `<div class="intro"><b>증감은 보도 비중</b>(주제 기사 가중 수 / 같은 달 유입 기사 전체 가중 수)이며 산업의 실물 성장·쇠퇴가 아닙니다. 확정 기준월 ${esc(T.asof)}, 최근 6개월(${esc(((T.periods || {}).recent6 || []).join("~"))}) 대 직전 6개월(${esc(((T.periods || {}).base6 || []).join("~"))}).
+    '유지'는 다른 유형 조건을 못 넘은 나머지로, 방향 혼재(6개월 비는 기준을 넘었지만 다른 조건 불충족)와 변화 작음을 따로 표시합니다. 주제 이름은 상위 키워드이며 하나의 사건이 아닐 수 있으니 판정 근거 기사로 확인하세요.<br>
+    E4.2 주제 ${T.rows.length}개(고정 모델)의 월별 기사 비중으로 판정한 주제 트렌드입니다. 위의 층(콘텐츠·자본시장) 선택과 무관하게 E2 관련성 판정 기사 전체를 씁니다. 확정 판정 기준월 ${esc(T.asof)}${T.partial ? ` (${esc(T.partial)}은 불완전월이라 제외)` : ""}.
     월 기사가 부족한 주제는 3개월 묶음으로 다시 판정하고, 그래도 부족하면 저빈도로 둡니다. 유형은 제안이며 대표 기사를 보고 최종 판단하세요.</div>
   <div class="tfilter"><button data-tt="all" class="${topicType === "all" ? "on" : ""}">전체 ${rows.length}</button>${types.map(t => `<button data-tt="${t}" class="${topicType === t ? "on" : ""}">${TT_KO[t]} ${cnt(t)}</button>`).join("")}</div>
   <div class="note">판정 단위: 월 ${T.resolution.month || 0} · 분기 ${T.resolution.quarter || 0} · 저빈도 ${T.resolution.low_volume || 0}. 음영은 최근 12개월.
     '새 흐름'·'흐름 종료'는 6개월 창 재군집에서 시드 과반으로 확인된 사건만 표시합니다 (분할·병합은 군집 무작위성과 구별되지 않아 표시하지 않음${L.excess_over_null ? `; 무작위성 기준 대비 new +${L.excess_over_null.new}, ended +${L.excess_over_null.ended}` : ""}).</div>
   <div class="grid" style="margin-top:8px">${shown.map(r => topicCard(r, T)).join("") || '<div class="muted">해당 없음</div>'}</div>
-  <details style="margin-top:16px"><summary class="muted">잡음 후보 주제 ${noise.length}개 (트렌드 판정에서 제외, E4.2 잡음 사유)</summary><div class="grid" style="margin-top:8px">${noise.map(r => topicCard(r, T)).join("")}</div></details>
+  <details style="margin-top:16px"><summary class="muted">잡음 후보 주제 ${noise.length}개 (트렌드 판정에서 제외 — 근거: E4.2 유형 NOISE_CANDIDATE 또는 잡음 사유 코드)</summary><div class="grid" style="margin-top:8px">${noise.map(r => topicCard(r, T)).join("")}</div></details>
   <div class="note" style="margin-top:10px">출처: E5b ${esc(T.run_id)} · E4.2 ${esc(T.e42_run)}</div>`;
 };
 
@@ -327,7 +337,7 @@ render.cross = () => {
     const path = d.path.map(([s, h]) => `${esc(s)}(${h})`).join(" → ");
     return kwCard(k, `<div style="margin-top:8px">${head}<div class="cells">${cells}</div><div class="note">확산 경로: ${path || "–"}</div></div>`);
   }).join("");
-  return `<div class="intro">여러 분야에서 동시에 확대되는 이슈. 최근 12개월 3개 이상 분야에서 유의미(분야 기사 ${pct(0.003, 1)} 이상, 5건 이상)하고 2개 이상 분야에서 직전 12개월 대비 증가(↑ 1.25배, ↑↑ 2배). 칸 색은 분야 내 비중, 기호는 변화입니다. 확산 경로는 분야마다 처음 유의미해진 반기입니다.</div><div class="grid">${cards || '<div class="muted">해당 없음</div>'}</div>`;
+  return `<div class="intro">여러 업종의 기업 기사에서 동시에 보도 비중이 늘어난 키워드 (업종 = 연결 기업의 업종 합집합이며, 기사 내용상 분야 확산을 뜻하지는 않음). 최근 12개월 3개 이상 분야에서 유의미(분야 기사 ${pct(0.003, 1)} 이상, 5건 이상)하고 2개 이상 분야에서 직전 12개월 대비 증가(↑ 1.25배, ↑↑ 2배). 칸 색은 분야 내 비중, 기호는 변화입니다. 확산 경로는 분야마다 처음 유의미해진 반기입니다.</div><div class="grid">${cards || '<div class="muted">해당 없음</div>'}</div>`;
 };
 
 let convUnit = "year";
@@ -346,7 +356,7 @@ render.conv = () => {
   };
   const kp = D.keyword_pairs.slice(0, 40).map(r => `<tr><td><span class="${P[r.a] ? "link" : ""}" data-k="${esc(r.a)}">${esc(r.a)}</span> × <span class="${P[r.b] ? "link" : ""}" data-k="${esc(r.b)}">${esc(r.b)}</span>${r.different_early_cluster ? ' <span class="tag Converging">다른 군집이었음</span>' : ""}</td><td class="n">${fx(r.early_distance, 2)}</td><td class="n">${fx(r.recent_distance, 2)}</td><td class="n">${r.early_co} → ${r.recent_co}</td></tr>`).join("");
   const br = D.bridges.slice(0, 20).map(b => `<tr><td><span class="${P[b.keyword] ? "link" : ""}" data-k="${esc(b.keyword)}">${esc(b.keyword)}</span></td><td class="n">${b.clusters}</td><td class="n">${fx(b.betweenness, 3)}</td><td>${esc(b.cluster_names.join(" / "))}</td></tr>`).join("");
-  return `<div class="intro">공통 트렌드(같은 키워드가 여러 분야에서 증가)와 달리, 융합은 <b>관계가 약했던 분야·이슈가 가까워지는 현상</b>입니다. 분야 거리는 각 분야에서 전체 대비 과대표현된 키워드 프로필의 코사인 거리(1 − 유사도)입니다. 분야 소속이 기업 매핑에서 오므로 기업명 키워드는 거리 계산에서 뺐습니다. 교차 기사는 서로 다른 기업을 통해 두 분야에 함께 걸린 기사의 비율입니다.</div>
+  return `<div class="intro">공통 트렌드(같은 키워드가 여러 분야에서 증가)와 달리, 이 탭은 <b>관계가 약했던 업종·키워드의 연결이 늘어난 신호</b>입니다. 연결 증가는 산업 간 융합을 입증하지 않으며, 한 사건(예: 소송 합의)의 반복 보도로도 생깁니다. 대표 기사로 같은 사건인지 확인하세요. 분야 거리는 각 분야에서 전체 대비 과대표현된 키워드 프로필의 코사인 거리(1 − 유사도)입니다. 분야 소속이 기업 매핑에서 오므로 기업명 키워드는 거리 계산에서 뺐습니다. 교차 기사는 서로 다른 기업을 통해 두 분야에 함께 걸린 기사의 비율입니다.</div>
     <div class="toolbar"><span class="muted">단위</span><div class="seg" id="convSeg"><button data-u="year" class="${convUnit === "year" ? "on" : ""}">연도</button><button data-u="half" class="${convUnit === "half" ? "on" : ""}">반기</button></div></div>
     <h2>분야 간 거리 변화 (가까워진 순)</h2>
     <div class="tablewrap tall"><table><thead><tr><th>분야 쌍</th>${ps.map(p => `<th class="n">${esc(p)}</th>`).join("")}<th class="n">변화</th><th class="n">교차 기사</th><th>새로 공유된 특징 키워드</th></tr></thead><tbody>${sc.pairs.map(pairRow).join("")}</tbody></table></div>
@@ -356,18 +366,18 @@ render.conv = () => {
     <div class="tablewrap tall" style="margin-top:6px"><table><thead><tr><th>키워드 쌍</th><th class="n">이전 거리</th><th class="n">최근 거리</th><th class="n">동시등장 기사</th></tr></thead><tbody>${kp || '<tr><td colspan="4" class="muted">해당 없음</td></tr>'}</tbody></table></div>
     <h2 style="margin-top:18px">군집을 잇는 다리 키워드 (최근 12개월)</h2>
     <div class="tablewrap"><table><thead><tr><th>키워드</th><th class="n">연결 군집 수</th><th class="n">매개중심성</th><th>연결된 군집</th></tr></thead><tbody>${br}</tbody></table></div>
-    <h3>키워드 단위 융합 (Converging)</h3>${kwGrid(D.converging, "g-conv", "ratio")}`;
+    <h3>키워드 단위 연관어 연결 증가 (Converging)</h3>${kwGrid(D.converging, "g-conv", "ratio")}`;
 };
 
 let emTab = "emerging";
 render.emerging = () => {
-  const lists = {emerging: ["부상 Emerging", D.emerging, "기존 비중이 낮았는데(직전 0.3% 이하) 최근 2.5배 이상 증가. 급증한 한 달을 빼도 조건을 만족해야 합니다."],
-    growing: ["성장 Growing", D.growing, "직전 구간에도 있었고, 최근 6분기 비중이 꾸준히 증가(순위상관 0.6 이상), 최근 1.3배 이상."],
-    spreading: ["확산 Spreading", D.spreading, "유의미하게 등장하는 분야 수가 첫 12개월보다 2개 이상 늘어남."],
-    declining: ["쇠퇴 Declining", D.declining, "비중이 0.6배 이하로 줄고 6분기 추세가 감소하며, 네트워크 연결 수도 줄어듦."],
-    event: ["이벤트성 Event-driven", D.event, "한 달 비중이 평소의 4배 이상, 전후 3개월 기사의 절반 이상이 그 달에 몰리고 이후 되돌아간 급증. 트렌드와 구분해서 봅니다."]};
+  const lists = {emerging: ["신규 부상 Emerging", D.emerging, "기존 비중이 낮았는데(직전 0.3% 이하) 최근 2.5배 이상 증가. 급증한 한 달을 빼도 조건을 만족해야 합니다."],
+    growing: ["보도 증가 Growing", D.growing, "직전 구간에도 있었고, 최근 6분기 비중이 꾸준히 증가(순위상관 0.6 이상), 최근 1.3배 이상."],
+    spreading: ["관련 업종 증가 Spreading", D.spreading, "유의미하게 등장하는 분야 수가 첫 12개월보다 2개 이상 늘어남."],
+    declining: ["보도 감소 Declining", D.declining, "비중이 0.6배 이하로 줄고 6분기 추세가 감소하며, 네트워크 연결 수도 줄어듦."],
+    event: ["단기 집중 Event-driven", D.event, "한 달 비중이 평소의 4배 이상, 전후 3개월 기사의 절반 이상이 그 달에 몰리고 이후 되돌아간 급증. 트렌드와 구분해서 봅니다."]};
   const [title, list, note] = lists[emTab];
-  return `<div class="intro">모든 증가를 같은 트렌드로 보지 않습니다. 키워드 하나가 여러 상태를 동시에 가질 수 있습니다.</div>
+  return `<div class="intro">증감은 보도 비중(분기)이며 산업의 실물 성장·쇠퇴가 아닙니다. 모든 증가를 같은 트렌드로 보지 않습니다. 키워드 하나가 여러 상태를 동시에 가질 수 있습니다.</div>
     <div class="toolbar"><div class="seg" id="emSeg">${Object.entries(lists).map(([k, v]) => `<button data-e="${k}" class="${k === emTab ? "on" : ""}">${v[0]} (${v[1].length})</button>`).join("")}</div></div>
     <div class="note" style="margin-bottom:8px">${note}</div>${kwGrid(list, "g-em", emTab === "declining" ? "articles" : "ratio")}`;
 };
@@ -499,9 +509,9 @@ function openKw(k) {
       <div class="stat"><div class="k">직전 대비</div><div class="v">${fx(p.ratio)}배</div></div>
       <div class="stat"><div class="k">전기 / 전년동기 (비중)</div><div class="v" style="font-size:13px">${p.qoq == null ? "–" : (p.qoq > 0 ? "+" : "") + (p.qoq * 100).toFixed(0) + "%"} / ${p.yoy == null ? "–" : (p.yoy > 0 ? "+" : "") + (p.yoy * 100).toFixed(0) + "%"}</div></div>
       <div class="stat"><div class="k">증가 지속기간</div><div class="v">${p.growth_months}개월</div></div>
-      <div class="stat"><div class="k">분야 확산</div><div class="v">${d.recent}/${d.n_sectors} <span class="muted" style="font-size:12px">(처음 ${d.first})</span></div></div>
+      <div class="stat"><div class="k">관련 업종 (연결 기업 기준)</div><div class="v">${d.recent}/${d.n_sectors} <span class="muted" style="font-size:12px">(처음 ${d.first})</span></div></div>
       <div class="stat"><div class="k">최초 / 최근 등장</div><div class="v" style="font-size:12px">${p.first_seen}<br>${p.last_seen}</div></div>
-      <div class="stat"><div class="k">최다 검색 기업 (최근)</div><div class="v" style="font-size:12px">${esc(p.company.top)} ${pct(p.company.share, 0)}<br><span class="muted">기업 ${p.company.n}곳</span></div></div>
+      <div class="stat"><div class="k">최다 검색 기업 (최근)</div><div class="v" style="font-size:12px">${p.company.top ? `${esc(p.company.top)} ${pct(p.company.share, 0)}` : '<span class="muted">해당 없음</span>'}<br><span class="muted">기업 ${p.company.n}곳</span></div></div>
     </div>
     <h3>탐지 근거</h3><ul class="ev">${p.evidence.map(e => `<li>${esc(e)}</li>`).join("")}</ul>
     <div class="note">상태는 제안입니다. 기사와 지표를 보고 최종 판단하세요.</div>

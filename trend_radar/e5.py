@@ -176,6 +176,27 @@ def signal_row(W: np.ndarray, T: np.ndarray, rules: dict, t: int | None = None, 
             "left_censored": left_censored, "weighted_df_last": float(W[-1]), "signal_type": kind}
 
 
+# ---------------------------------------------------------------- 키워드 역할
+
+def keyword_role(kw: str, entity_type: str, general: set[str], market: set[str], companies: set[str], formats: list) -> str:
+    """신호 해석용 역할. company(탐색 조건) / general(보고서체 일반어) / market(시세·공시 표현) / format(방송 안내 등 서식어)
+    / entity(작품·개체) / concept. general·market·format은 트렌드 신호 목록에서 뺀다 (값은 보존)."""
+    import re as _re
+
+    parts = set(kw.split())
+    if kw in companies or entity_type == "기업":
+        return "company"
+    if any(_re.search(p, kw) for p in formats):
+        return "format"
+    if parts & market:
+        return "market"
+    if kw in general or (len(parts) > 1 and parts <= general):
+        return "general"
+    if entity_type and entity_type != "개념":
+        return "entity"
+    return "concept"
+
+
 # ---------------------------------------------------------------- 실행
 
 def latest_run(registry: Path, task: str) -> str:
@@ -290,6 +311,15 @@ def run_e5a(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
                 "raw_doc_freq_total": int(Wr[k].sum()), "weighted_doc_freq_total": round(float(Wh[k].sum()), 1),
             })
         sig = pd.DataFrame(out).drop(columns=["first_month_idx"])
+        from .config import Lexicon
+        lc = cfg.get("layers", {})
+        general = set(lc.get("content_extra_stopwords") or []) | set(Lexicon.load().stopwords)
+        market = set(lc.get("market_seed") or []) | set(cfg.get("e3", {}).get("market_phrase_words") or [])
+        companies = {c for cs in arts["companies"] for c in cs}
+        formats = rules.get("format_patterns", [])
+        sig.insert(4, "keyword_role", [keyword_role(k, e, general, market, companies, formats)
+                                       for k, e in zip(sig["keyword"], sig["entity_type"].fillna(""))])
+        sig["trend_eligible"] = sig["keyword_role"].isin(["concept", "entity"])
         ps = run.dir / "06a_keyword_signal.csv"
         sig.to_csv(ps, index=False, encoding="utf-8-sig")
         run.artifact(ps, "keyword_signal", rows=len(sig))
@@ -322,7 +352,8 @@ def run_e5a(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
         "cross_sector": int(sig["cross_sector"].sum()),
         "burst_param_agreement": burst_agree,
         "backtest": backtest_summary(bt),
-        "top": {k: sig[sig["signal_type"] == k].sort_values("weighted_df_last", ascending=False)["keyword"].head(30).tolist()
+        "role_counts": sig["keyword_role"].value_counts().to_dict(),
+        "top": {k: sig[(sig["signal_type"] == k) & sig["trend_eligible"]].sort_values("weighted_df_last", ascending=False)["keyword"].head(30).tolist()
                 for k in ("Emerging", "Growing", "Event Spike", "Declining", "Established")},
     }
     (run.dir / "e5a_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8")

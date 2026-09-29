@@ -189,10 +189,11 @@ def status_frame(dt: DocTerm, arts: pd.DataFrame, rows: np.ndarray, win: Windows
         cm = np.asarray((dt.X[rrows].T @ company_X[rrows]).todense())
         tot = np.maximum(cm.sum(1), 1)
         top = cm.argmax(1)
-        s["top_company"] = np.array(company_names)[top]
-        s["top_company_share"] = cm[np.arange(V), top] / tot
+        has = cm.sum(1) > 0                              # 최근 구간에 기업 연결이 없으면 '해당 없음' (argmax 0번 기업을 쓰지 않는다)
+        s["top_company"] = np.where(has, np.array(company_names)[top], "")
+        s["top_company_share"] = np.where(has, cm[np.arange(V), top] / tot, np.nan)
         s["n_companies"] = (cm > 0).sum(1)
-        s["company_specific"] = (s["top_company_share"] >= sc.get("company_specific_share", 0.6)) & (r_df > 0)
+        s["company_specific"] = (np.nan_to_num(s["top_company_share"]) >= sc.get("company_specific_share", 0.6)) & (r_df > 0)
     return s
 
 

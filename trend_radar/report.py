@@ -42,7 +42,7 @@ def _slim(result: dict, top_profiles: int = 150) -> dict:
     목록·분야·군집·쌍에 나온 키워드 + 기사 수 상위 키워드의 프로파일만 싣는다."""
     r = dict(result)
     prof = result["profiles"]
-    keep = set(result["overall"]["rising"]) | set(result["overall"]["established"])
+    keep = set(result["overall"]["rising"]) | set(result["overall"]["established"]) | set(result["overall"].get("companies_rising", []))
     for k in LIST_KEYS:
         keep.update(result[k])
     for sec in result["sectors"].values():

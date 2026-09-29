@@ -15,11 +15,11 @@ from pathlib import Path
 
 import pandas as pd
 
-TT_KO = {"Emerging": "부상", "Growing": "성장", "Established": "정착", "Stable": "유지", "Declining": "쇠퇴",
-         "Event Spike": "급등", "Low volume": "저빈도", "Noise": "잡음 후보", "Insufficient": "자료 부족"}
+TT_KO = {"Emerging": "신규 부상", "Growing": "보도 비중 증가", "Established": "지속 보도", "Stable": "유지(잔여)", "Declining": "보도 비중 감소",
+         "Event Spike": "단기 집중", "Low volume": "최근 자료 부족", "Noise": "잡음 후보", "Insufficient": "자료 부족"}
 RES_KO = {"month": "월", "quarter": "분기", "low_volume": "저빈도"}
-LIST_KO = {"rising": "A 확대되는 이슈", "established": "A 지속 핵심", "cross_sector": "C 분야 간 공통", "emerging": "E 부상",
-           "growing": "E 성장", "declining": "E 쇠퇴", "event": "E 이벤트성", "spreading": "D 확산", "converging": "D 융합",
+LIST_KO = {"rising": "A 확대되는 이슈", "established": "A 지속 핵심", "cross_sector": "C 여러 업종 공통", "emerging": "E 부상",
+           "growing": "E 성장", "declining": "E 쇠퇴", "event": "E 이벤트성", "spreading": "D 관련 업종 증가", "converging": "D 연관어 연결 증가", "companies_rising": "A 기업별 보도 증가(탐색용)",
            "structural": "F 구조 변화"}
 EVAL_TOPIC = ["eval_topic_coherent", "eval_is_content_industry", "eval_trend_type_ok", "eval_suggested_type", "eval_comment"]
 EVAL_KW = ["eval_meaningful", "eval_is_content_industry", "eval_signal_ok", "eval_comment"]
@@ -32,8 +32,10 @@ README = """# Trend Radar 평가 묶음
 ## 파일
 | 파일 | 행 | 내용 |
 |---|---|---|
-| 01_topic_trends.tsv | {n_topics} | 주제 트렌드 (화면 '주제 트렌드' 탭). 잡음 후보도 포함 (trend_type=잡음 후보) |
-| 02_topic_monthly.tsv | {n_topics} | 주제별 월간 기사 비중 (유입 기사 1,000건당). 마지막 달이 불완전월이면 판정에서 제외됨 |
+| 00_manifest.tsv | | 표별 실행ID·스냅샷·설정 해시·커밋·사전 해시·집계 기준 |
+| 01_topic_trends.tsv | {n_topics} | 주제 트렌드 (화면 '주제 트렌드' 탭). 잡음 후보도 포함 (trend_type=잡음 후보, 근거 noise_basis) |
+| 02_topic_monthly.tsv | {n_monthly} | 주제 × 월: 원 기사 수, 가중 기사 수 W, 분모 N, 1,000건당 비중, 불완전월·판정 포함 여부 |
+| 05_topic_evidence.tsv | {n_ev} | 판정 근거 기사 (판정 기간 안, 기사ID·요약·E2 판정·배정 신뢰도·선정 사유) |
 | 03_keyword_signals.tsv | {n_kw} | 키워드 시계열 신호 (자료 부족 제외) |
 | 04_radar_lists.tsv | {n_list} | 키워드 레이더 화면 목록 (층: content=콘텐츠·사업, market=자본시장) |
 | spec/SPEC_CURRENT.md | | 현행 명세 (운영 방식·규칙·검증 체계·알려진 한계) |
@@ -52,10 +54,32 @@ README = """# Trend Radar 평가 묶음
 - eval_signal_ok (키워드): 신호 유형이 맞는가 (Y / N / ?)
 - eval_comment: 짧은 근거
 
+## 계산식 (재현용)
+- 비중: share = W / N × 1000. W = 주제에 HIGH·LOW로 배정된 기사의 판정 가중 합(INCLUDE 1, REVIEW 0.5), N = 같은 달 E2 유입 기사 전체의 판정 가중 합
+  (미배정·거부 기사도 분모에 남는다 → 한 달 주제 비중 합이 1,000보다 작다).
+- 증가 배율 ratio_6m = ((ΣW_최근6 + 1) / ΣN_최근6) / ((ΣW_직전6 + 1) / ΣN_직전6). 월 비중의 평균끼리 나눈 값이 아니라 **기간 합산 후 +1 평활**이다.
+  최근 6개월 = 확정 기준월까지 6개월. growth_3m은 마지막 달 대 직전 3개월 평균의 같은 형식.
+- Robust Z = (마지막 달 비중 − 직전 12개월 비중 중앙값) / (1.4826 × MAD), ±10에서 자름 (MAD=0이면 같으면 0, 다르면 ±10). 버스트 = Kleinberg 2상태 (s=2, γ=1).
+- 분기 판정: 확정 기준월에서 끝나는 3개월 묶음으로 뒤에서부터 자르고, 앞쪽 모자란 달은 버린다 (2026-08 기준 마지막 분기 = 2026-06~08).
+- 키워드 레이더(04)는 E5와 다른 체계: 최근 2분기 대 직전 4분기 분기 비중 비교 (compare 열).
+
+## 표시 명칭 (산업 성장·융합으로 읽지 않도록)
+| 내부 유형 | 표시 | 뜻 |
+|---|---|---|
+| Growing / Declining | 보도 비중 증가 / 감소 | 유입 기사 중 비중의 증감. 산업의 실물 성장·쇠퇴가 아님 |
+| Established | 지속 보도 | 12개월 거의 매달 보도, 비중 변화 작음 |
+| Stable | 유지(잔여) → trend_note: 방향 혼재 / 변화 작음 | 다른 유형 조건을 못 넘은 나머지. 방향 혼재 = 6개월 비는 기준을 넘었지만 Robust Z·지속 조건 불충족 |
+| Event Spike | 단기 집중 | 짧은 버스트 |
+| Converging (레이더) | 연관어 연결 증가 | 연관 키워드 연결이 늘었다는 뜻. 산업 간 융합을 입증하지 않음 |
+| Spreading / 분야 확산 | 관련 업종 증가 / 관련 기업 업종 다수 | 기사 분야 = 연결 기업의 업종 합집합. 기사 내용상 분야 확산과 다름 |
+- 기업명 키워드는 A·C·D·E 목록에서 빼고 'A 기업별 보도 증가(탐색용)'에 따로 둔다 (기업 안의 작품·사건을 찾는 출발점).
+- 03의 keyword_role: company / general(보고서체 일반어) / market(시세·공시 표현) / format(방송 안내 등) / entity / concept. trend_eligible=False는 신호 목록에서 제외.
+
 ## 판정 규칙 요약
 - 주제: E4.2 고정 모델(LSA100 K120)의 월별 배정. 유형 규칙은 키워드 신호와 같다 (최근 6개월 대 직전 6개월 비중 비, Robust Z, 버스트, 12개월 지속).
   월 가중 기사 5건 미만이면 분기 단위로 다시 판정(signal_resolution=분기), 분기로도 부족하면 저빈도.
-- lineage_recent: 6개월 창 재군집에서 시드 과반으로 확인된 사건 (new=새 흐름, ended=흐름 종료). 분할·병합은 군집 무작위성과 구별되지 않아 쓰지 않는다.
+- lineage_stable_all: 6개월 창 재군집에서 시드 과반으로 확인된 사건 전체(split·merged 포함). lineage_display: 그중 화면에 쓰는 new(새 흐름)·ended(흐름 종료)만.
+  split·merged는 같은 창 재군집(무작위성 기준)과 건수가 비슷해 쓰지 않는다.
 - entity_driven: 최근 12개월 주제 기사의 절반 이상이 한 기업 기사. cross_sector: 3개 이상 분야·정규화 엔트로피 0.6 이상.
 - 판정은 제안이다. LLM 평가를 받으면 참고 의견으로만 쓴다 (정답·학습 라벨 아님).
 """
@@ -82,27 +106,39 @@ def topic_tables(out_root: Path, e5b_run: str) -> tuple[pd.DataFrame, pd.DataFra
                      "share_per_1000_last": r["share_last"], "sectors_active_12m": r["sectors"], "cross_sector": int(r["cross"]),
                      "entity_driven": int(r["entity"]), "top_company_12m": r["company"], "top_company_share_12m": r["company_share"],
                      "keyword_support": r["support"], "sensitivity_flag": r["sens"], "signal_type_soft": TT_KO.get(r["soft"], r["soft"]),
-                     "lineage_recent": ";".join(r["lineage"]), "topic_type_e42": r["e42"], "noise_reason_codes": r["noise_codes"],
-                     "representative_articles": " || ".join(f"{a['d']} {a['t']}" for a in r["arts"]),
+                     "trend_note": r.get("note", ""), "lineage_display": ";".join(r["lineage"]), "lineage_stable_all": ";".join(r.get("lineage_all", [])),
+                     "topic_type_e42": r["e42"], "noise_reason_codes": r["noise_codes"], "noise_basis": r.get("noise_basis", ""),
+                     "evidence_articles_signal_period": " || ".join(f"{a['d']} [{a['dec']}/{a['conf']}] {a['t']}" for a in r.get("evidence", [])),
+                     "representative_articles_all_period": " || ".join(f"{a['d']} {a['t']}" for a in r["arts"]),
                      **{c: "" for c in EVAL_TOPIC}})
     t = pd.DataFrame(rows)
     order = {k: i for i, k in enumerate(["Growing", "Emerging", "Event Spike", "Established", "Stable", "Declining", "Low volume", "Noise"])}
     t = t.sort_values(["trend_type_en", "weighted_articles_12m"], key=lambda s: s.map(order) if s.name == "trend_type_en" else -s.fillna(0))
-    m = pd.DataFrame([{"topic_id": r["id"], **dict(zip(pl["months"], r["series"]))} for r in pl["rows"]])
+    mp = out_root / "runs" / e5b_run / "06b_topic_trend_monthly.parquet"
+    m = pd.read_parquet(mp)
+    cols = [c for c in ["topic_id", "month", "raw_articles", "weighted_articles", "month_total_weighted", "share_per_1000",
+                        "is_partial_month", "in_signal_window"] if c in m.columns]
+    m = m[cols].sort_values(["topic_id", "month"])
     return t, m, pl
+
+
+def evidence_table(out_root: Path, e5b_run: str) -> pd.DataFrame:
+    p = out_root / "runs" / e5b_run / "06b_topic_evidence.csv"
+    return pd.read_csv(p, keep_default_na=False) if p.exists() else pd.DataFrame()
 
 
 def keyword_table(out_root: Path, e5a_run: str) -> pd.DataFrame:
     s = pd.read_csv(out_root / "runs" / e5a_run / "06a_keyword_signal.csv")
     s = s[s["signal_type"] != "Insufficient"].copy()
-    keep = ["keyword", "class_auto", "entity_type", "signal_type", "signal_type_provisional", "signal_type_soft", "sensitivity_flag",
+    keep = ["keyword", "class_auto", "entity_type", "keyword_role", "trend_eligible", "signal_type", "signal_type_provisional", "signal_type_soft", "sensitivity_flag",
             "ratio_6m", "growth_3m", "robust_z", "persistence_12m", "burst_months_12m", "left_censored", "weighted_df_last",
             "cross_sector", "top_company_12m", "top_company_share_12m", "first_month"]
     s = s[[c for c in keep if c in s.columns]]
-    s.insert(4, "signal_type_ko", s["signal_type"].map(TT_KO).fillna(s["signal_type"]))
+    s.insert(s.columns.get_loc("signal_type") + 1, "signal_type_ko", s["signal_type"].map(TT_KO).fillna(s["signal_type"]))
     for c in EVAL_KW:
         s[c] = ""
-    return s.sort_values(["signal_type", "weighted_df_last"], ascending=[True, False])
+    by = [c for c in ["trend_eligible", "signal_type", "weighted_df_last"] if c in s.columns]
+    return s.sort_values(by, ascending=[False, True, False][-len(by):])
 
 
 def radar_table(out_root: Path) -> pd.DataFrame:
@@ -114,6 +150,7 @@ def radar_table(out_root: Path) -> pd.DataFrame:
         r = json.loads(p.read_text(encoding="utf-8"))
         prof = r["profiles"]
         lists = {"rising": r["overall"]["rising"], "established": r["overall"]["established"],
+                 "companies_rising": r["overall"].get("companies_rising", []),
                  **{k: r.get(k, []) for k in LIST_KO if k not in ("rising", "established")}}
         for key, kws in lists.items():
             for rank, k in enumerate(kws, 1):
@@ -126,7 +163,9 @@ def radar_table(out_root: Path) -> pd.DataFrame:
                              "status": ";".join(pr.get("status") or []), "articles": pr.get("articles"),
                              "recent_share": pr.get("recent_share"), "base_share": pr.get("base_share"), "ratio": pr.get("ratio"),
                              "sectors_recent": (pr.get("diffusion") or {}).get("recent"),
-                             "top_company": co.get("top"), "top_company_share": co.get("share"),
+                             "top_company": co.get("top") if co.get("share") else "", "top_company_share": co.get("share") or None,
+                             "compare": f"최근 {r['meta'].get('recent_q', ['?'])[0]}~{r['meta'].get('recent_q', ['?'])[-1]} 대 직전 "
+                                        f"{r['meta'].get('base_q', ['?'])[0]}~{r['meta'].get('base_q', ['?'])[-1]} (분기 보도 비중)",
                              "evidence": " | ".join((pr.get("evidence") or [])[:3]), "example_articles": titles,
                              **{c: "" for c in EVAL_KW}})
     return pd.DataFrame(rows)
@@ -144,7 +183,9 @@ def export_pack(out_root: Path, dest: Path | None = None) -> dict:
     t, m, pl = topic_tables(out_root, e5b)
     k = keyword_table(out_root, summ["e5a_run"])
     rl = radar_table(out_root)
-    files = {"01_topic_trends.tsv": t, "02_topic_monthly.tsv": m, "03_keyword_signals.tsv": k, "04_radar_lists.tsv": rl}
+    ev = evidence_table(out_root, e5b)
+    files = {"01_topic_trends.tsv": t, "02_topic_monthly.tsv": m, "03_keyword_signals.tsv": k, "04_radar_lists.tsv": rl,
+             "05_topic_evidence.tsv": ev}
     for name, df in files.items():
         df = df.round(4)
         df.to_csv(dest / name, sep="\t", index=False, encoding="utf-8-sig")
@@ -153,7 +194,7 @@ def export_pack(out_root: Path, dest: Path | None = None) -> dict:
     (dest / "README.md").write_text(README.format(
         created=datetime.now().strftime("%Y-%m-%d %H:%M"), snapshot=snap, asof=pl["asof"],
         partial=f" ({pl['partial']} 불완전월 제외)" if pl.get("partial") else "", e5b=e5b, e42=summ["e42_run"], e5a=summ["e5a_run"],
-        n_topics=len(t), n_kw=len(k), n_list=len(rl)), encoding="utf-8")
+        n_topics=len(t), n_kw=len(k), n_list=len(rl), n_monthly=len(m), n_ev=len(ev)), encoding="utf-8")
     # 명세 묶음: 개선 작업용 (현행 명세, 실험 기록, 설정, 판정 가이드, 결정 기록, 개선 검토 요청문)
     import shutil
 
@@ -166,6 +207,25 @@ def export_pack(out_root: Path, dest: Path | None = None) -> dict:
                 root / "docs" / "review" / "improvement_prompt.md"):
         if src.exists():
             shutil.copy2(src, spec / src.name)
+    # 표별 출처 (같은 스냅샷·실행에서 나온 결과인지 판별)
+    import hashlib
+
+    from .runlog import REGISTRY as _R
+    runs = {json.loads(l)["run_id"]: json.loads(l) for l in (_R / "run_registry.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()}
+    lex = root / "lexicon.yaml"
+    lex_sha = hashlib.sha256(lex.read_bytes()).hexdigest()[:12] if lex.exists() else ""
+    mf = []
+    for name, rid, basis in [("01_topic_trends.tsv", e5b, f"확정 기준월 {pl['asof']}, 최근 6개월 {pl['periods']['recent6'][0]}~{pl['periods']['recent6'][1]} 대 직전 6개월"),
+                             ("02_topic_monthly.tsv", e5b, "월별 (in_signal_window=True인 달만 판정에 사용)"),
+                             ("03_keyword_signals.tsv", summ["e5a_run"], f"확정 기준월 {pl['asof']}"),
+                             ("04_radar_lists.tsv", "out/{content,market}/radar.json", "최근 2분기 대 직전 4분기 (키워드 레이더, E5와 비교 체계가 다름)"),
+                             ("05_topic_evidence.tsv", e5b, "판정 기간 안의 배정 기사만")]:
+        rr = runs.get(rid, {})
+        mf.append({"table": name, "run_id": rid, "data_snapshot_id": rr.get("data_snapshot_id", ""), "config_hash": rr.get("config_hash", ""),
+                   "git_commit": rr.get("git_commit", ""), "lexicon_sha256_12": lex_sha, "basis": basis})
+    pd.DataFrame(mf).to_csv(dest / "00_manifest.tsv", sep="\t", index=False, encoding="utf-8-sig")
+    if lex.exists():
+        shutil.copy2(lex, spec / "lexicon.yaml")
     zp = dest.with_suffix(".zip")
     with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED) as z:
         for f in sorted(dest.rglob("*")):
