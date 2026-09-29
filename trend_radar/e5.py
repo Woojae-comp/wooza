@@ -115,12 +115,16 @@ def run_lengths(active: np.ndarray) -> tuple[int, int]:
     return cur, best
 
 
-def signal_row(W: np.ndarray, T: np.ndarray, rules: dict, t: int | None = None) -> dict:
+def signal_row(W: np.ndarray, T: np.ndarray, rules: dict, t: int | None = None, per_year: int = 12) -> dict:
     """한 키워드의 월별 가중 빈도 W와 월별 가중 기사 합 T로 시점 t(기본: 마지막 달)의 지표와 유형.
     W[0]은 수집 첫 달이다. 첫 censor_months(기본 3)개월 안에 이미 등장했으면 left_censored (실제 최초 등장 시점 모름)
-    → Emerging을 주지 않는다."""
+    → Emerging을 주지 않는다.
+    per_year: 한 해의 기간 수 (월 12, 분기 4). 창 길이(12·6·3개월)와 개월 단위 기준을 기간 수로 환산한다. 기본값은 월 단위 그대로."""
     t = len(W) - 1 if t is None else t
-    left_censored = bool((W[: rules.get("censor_months", 3)] >= 1).any())
+    P = per_year                       # 12개월에 해당하는 기간 수
+    H, Q = max(P // 2, 1), max(P // 4, 1)   # 6개월, 3개월
+    months_per = 12 / P
+    left_censored = bool((W[: int(np.ceil(rules.get("censor_months", 3) / months_per))] >= 1).any())
     W, T = W[: t + 1], T[: t + 1]
     y = safe_share(W, T)
     L = len(W)
@@ -128,29 +132,30 @@ def signal_row(W: np.ndarray, T: np.ndarray, rules: dict, t: int | None = None) 
     prev = W[L - 2] if L >= 2 else 0.0
     prev_t = T[L - 2] if L >= 2 else 0.0
     g_mom = growth(W[-1], T[-1], prev, prev_t)
-    b3 = slice(max(0, L - 4), L - 1)
+    b3 = slice(max(0, L - 1 - Q), L - 1)
     g_3m = growth(W[-1], T[-1], W[b3].sum() / max(L - 1 - b3.start, 1), T[b3].sum() / max(L - 1 - b3.start, 1))
-    hist = y[max(0, L - 13): L - 1]
+    hist = y[max(0, L - P - 1): L - 1]
     z, rz = zscores(y[-1], hist) if len(hist) >= 3 else (0.0, 0.0)
-    r6, p6 = slice(max(0, L - 6), L), slice(max(0, L - 12), max(0, L - 6))
-    ratio_6 = growth(W[r6].sum(), T[r6].sum(), W[p6].sum(), T[p6].sum()) if L >= 12 else 1.0
+    r6, p6 = slice(max(0, L - H), L), slice(max(0, L - 2 * H), max(0, L - H))
+    ratio_6 = growth(W[r6].sum(), T[r6].sum(), W[p6].sum(), T[p6].sum()) if L >= 2 * H else 1.0
     present = W >= 1
-    pers6 = float(present[-6:].mean()) if L >= 6 else float(present.mean())
-    pers12 = float(present[-12:].mean()) if L >= 12 else float(present.mean())
+    pers6 = float(present[-H:].mean()) if L >= H else float(present.mean())
+    pers12 = float(present[-P:].mean()) if L >= P else float(present.mean())
     run_cur, run_max = run_lengths(present)
     first = int(np.argmax(present)) if present.any() else L
-    appeared_before = bool(present[: max(0, L - 12)].any())
+    appeared_before = bool(present[: max(0, L - P)].any())
     bursts = {f"s{s}_g{g}": kleinberg(W, T, s, g) for s, g in BURST_PARAMS}
     base = bursts[f"s{BURST_PARAMS[0][0]}_g{BURST_PARAMS[0][1]}"]
-    last12 = W[-12:]
+    last12 = W[-P:]
     peak_dom = float(last12.max() / last12.sum()) if last12.sum() > 0 else 0.0
-    burst_recent = bool(base[-3:].any())
-    burst_len = int(base[-12:].sum())
-    enough = W[-1] >= md or W[-3:].mean() >= md
+    burst_recent = bool(base[-Q:].any())
+    burst_len = int(base[-P:].sum())
+    enough = W[-1] >= md or W[-Q:].mean() >= md
+    spike_max = int(np.ceil(rules.get("spike_max_months", 2) / months_per))
 
     if not enough:
         kind = "Insufficient"
-    elif burst_recent and burst_len <= rules.get("spike_max_months", 2) and \
+    elif burst_recent and burst_len <= spike_max and \
             (pers12 < rules.get("spike_max_persistence", 0.5) or peak_dom >= rules.get("spike_peak_dominance", 0.5)):
         kind = "Event Spike"
     elif not left_censored and not appeared_before and g_3m >= rules.get("emerging_growth", 2.0) and pers6 >= 0.5:
@@ -167,7 +172,7 @@ def signal_row(W: np.ndarray, T: np.ndarray, rules: dict, t: int | None = None) 
             "persistence_6m": pers6, "persistence_12m": pers12, "run_current": run_cur, "run_longest": run_max,
             "first_month_idx": first, "appeared_before_12m": appeared_before, "peak_dominance_12m": peak_dom,
             "burst_recent_3m": burst_recent, "burst_months_12m": burst_len,
-            **{f"burst_{k}_recent": bool(v[-3:].any()) for k, v in bursts.items()},
+            **{f"burst_{k}_recent": bool(v[-Q:].any()) for k, v in bursts.items()},
             "left_censored": left_censored, "weighted_df_last": float(W[-1]), "signal_type": kind}
 
 

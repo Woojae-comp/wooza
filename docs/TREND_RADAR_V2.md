@@ -448,3 +448,15 @@ REVIEW 처리: 후보 추출·문서빈도·C-value·지속성·엔트로피·�
   - 고정 주제별 `lineage_recent`: 95개 중 37개가 최근 창에서 continued 외 사건 → 고정 모델이 놓칠 수 있는 구조 변화 점검 목록.
   - 한계: 창별 K-means 자체의 불안정도 new/ended로 나타난다 (시드 비교는 다음 단계).
 - 산출: `06b_topic_trend.csv`, `06b_topic_trend_monthly.parquet`, `07d_topic_lineage.csv`, `07d_window_purity.csv`, `e5b_summary.json`.
+
+### E5b 저빈도 주제 처리 (2026-09-29, run_20260929_102724_003e)
+- **자동 규칙 (데이터가 바뀌어도 사람이 다시 정하지 않음)**: 월 단위 판정 → 월 기사 부족(Insufficient)이면 같은 규칙을 **분기 단위**로 다시 적용
+  (`signal_resolution=quarter`, 창 길이·개월 기준을 기간 수로 환산: `signal_row(per_year=4)`, 분기 합계 5건 기준) → 분기로도 부족하면 **Low volume**
+  (트렌드 판정 제외, 목록 유지). 월 단위 결과는 이전과 동일(per_year=12 기본값).
+- 결과(잡음 제외 95개): 월 판정 59 / 분기 판정 24 / 저빈도 12.
+  최종 유형 Established 31 / Stable 20 / Declining 18 / Growing 11 / Event Spike 3 / Low volume 12. 민감도 불일치 15.
+  - 분기 판정은 대부분 Declining(13): 아이온2 출시, 뉴진스–어도어 분쟁, 위메이드 위믹스 재판처럼 한때 컸다가 최근 잠잠해진 주제.
+  - 분기 Growing: CJ ENM 영화·드라마 부문, 이정재·아티스트컴퍼니, 모바일 콘텐츠.
+  - Low volume 중에는 최근 12개월 가중 기사가 적지 않은 주제(차은우 탈세 의혹 82, 포바이포 테마 57)도 있다 → 최근 분기에 거의 없어서 '지금 판정 불가'.
+    과거 활동량은 `weighted_articles_12m`로 남아 있어 화면에서 '최근 잠잠' 표시가 가능하다.
+- 실행 요약에 `signal_resolution_counts` 기록: 다른 원자료에서 분기·저빈도 비율이 크게 달라지면 점검 신호.

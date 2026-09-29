@@ -6,7 +6,8 @@
    민감도: p_rel 가중 계열로 다시 판정 → 다르면 sensitivity_flag.
 3) 최종 유형 trend_type:
    - E4.2 잡음 후보(noise_reason_codes 또는 NOISE_CANDIDATE) → Noise (트렌드 목록에서 제외, 값은 보존)
-   - 그 밖은 주제 신호 유형. 보조 표시: cross_sector(최근 12개월 활성 분야 수·정규화 엔트로피), entity_driven(최근 12개월 상위 기업 점유),
+   - 그 밖은 주제 신호 유형. 월 기사가 부족하면(Insufficient) 같은 규칙을 분기 단위로 다시 적용 (signal_resolution=quarter),
+     분기로도 부족하면 Low volume (트렌드 판정에서 빼고 목록에는 남김). 데이터가 바뀌어도 사람이 다시 정하지 않는 자동 규칙. 보조 표시: cross_sector(최근 12개월 활성 분야 수·정규화 엔트로피), entity_driven(최근 12개월 상위 기업 점유),
      keyword_support(주제 상위 키워드 중 E5a Emerging·Growing·Event Spike 비율).
 4) 계보(E4.3): window_months 창을 step_months 간격으로 밀며, 같은 LSA 공간에서 창 안 기사만 K-means (K = 창에서 가중 min_topic_weight 이상인 고정 주제 수).
    이웃 창 군집을 중심 코사인으로 잇는다. 연결 기준은 서로 최선 짝인 쌍(분명한 이어짐) 코사인 분포의 하위 분위(link_quantile).
@@ -42,6 +43,27 @@ def topic_months(asg: pd.DataFrame, months: list[str], weight_col: str = "weight
     W = np.zeros((len(topics), len(months)))
     np.add.at(W, (asg.loc[ok, topic_col].map(ti).to_numpy(), col[ok]), w[ok])
     return topics, W, T
+
+
+def to_quarters(W: np.ndarray, T: np.ndarray, tc: int) -> tuple[np.ndarray, np.ndarray]:
+    """확정월 tc에서 끝나는 3개월 묶음 (앞쪽 모자란 달은 버린다). W: (주제 × 월) 또는 (월,)."""
+    n = (tc + 1) // 3
+    s0 = tc + 1 - 3 * n
+    Wq = W[..., s0: tc + 1].reshape(*W.shape[:-1], n, 3).sum(-1)
+    return Wq, T[s0: tc + 1].reshape(n, 3).sum(-1)
+
+
+def resolve_signal(Wm: np.ndarray, Tm: np.ndarray, tc: int, rules: dict) -> tuple[dict, str]:
+    """월 단위로 판정하고, 월 기사가 부족하면(Insufficient) 분기 단위로 다시 판정한다. 분기로도 부족하면 저빈도.
+    반환: (신호, 판정 단위 month / quarter / low_volume)."""
+    s = signal_row(Wm[: tc + 1], Tm[: tc + 1], rules)
+    if s["signal_type"] != "Insufficient":
+        return s, "month"
+    Wq, Tq = to_quarters(Wm, Tm, tc)
+    sq = signal_row(Wq, Tq, rules, per_year=4)
+    if sq["signal_type"] != "Insufficient":
+        return sq, "quarter"
+    return sq, "low_volume"
 
 
 def entropy_norm(x: np.ndarray) -> float:
@@ -240,9 +262,9 @@ def run_e5b(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
             active = int((sw_ >= rules.get("sector_min_df", 3)).sum())
             ent = entropy_norm(sw_)
             top_co, top_n = co_w.most_common(1)[0] if co_w else ("", 0.0)
-            s_conf = signal_row(W[i, : tc + 1], T[: tc + 1], rules)
+            s_conf, resolution = resolve_signal(W[i], T, tc, rules)
             s_prov = signal_row(W[i], T, rules)
-            s_soft = signal_row(Ws[i, : tc + 1], Ts[: tc + 1], rules)
+            s_soft, _ = resolve_signal(Ws[i], Ts, tc, rules)
             r = reg_i.loc[t] if t in reg_i.index else pd.Series(dtype=object)
             noise = bool(str(r.get("noise_reason_codes", "") or "").strip() and str(r.get("noise_reason_codes")) != "nan") \
                 or r.get("topic_type") == "NOISE_CANDIDATE"
@@ -251,7 +273,8 @@ def run_e5b(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
             support = round(sum(x in ("Emerging", "Growing", "Event Spike") for x in known) / len(known), 3) if known else None
             rows.append({
                 "topic_id": t, "topic_type_e42": r.get("topic_type"), "top_keywords": ", ".join(kws),
-                "trend_type": "Noise" if noise else s_conf["signal_type"],
+                "trend_type": "Noise" if noise else ("Low volume" if resolution == "low_volume" else s_conf["signal_type"]),
+                "signal_resolution": resolution,
                 "signal_type": s_conf["signal_type"], "signal_type_provisional": s_prov["signal_type"],
                 "signal_type_soft": s_soft["signal_type"], "sensitivity_flag": int(s_conf["signal_type"] != s_soft["signal_type"]),
                 "noise_excluded": int(noise), "noise_reason_codes": r.get("noise_reason_codes"),
@@ -283,6 +306,7 @@ def run_e5b(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
     summary = {"e42_run": e42_run, "e5a_run": e5_run, "topics": len(out), "noise_excluded": int(out["noise_excluded"].sum()),
                "signal_asof": months[tc], "partial_month": months[-1] if partial else None,
                "trend_type_counts": keep["trend_type"].value_counts().to_dict(),
+               "signal_resolution_counts": keep["signal_resolution"].value_counts().to_dict(),
                "sensitivity_flag": int(keep["sensitivity_flag"].sum()), "cross_sector": int(keep["cross_sector"].sum()),
                "entity_driven": int(keep["entity_driven"].sum()),
                "lineage_events_latest": lin[lin["is_latest_step"]]["event"].value_counts().to_dict() if len(lin) else {},
