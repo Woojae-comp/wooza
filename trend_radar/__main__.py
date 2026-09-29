@@ -23,6 +23,7 @@ def main() -> None:
     al.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
     al.add_argument("--out", default="out")
     al.add_argument("--min-df", type=int, default=5)
+    al.add_argument("--rebuild-e3", action="store_true", help="같은 E2가 있어도 핵심어 사전(E3)부터 다시 만든다 (사전 규칙 변경 반영)")
     e0 = sub.add_parser("e0", help="E0: 스냅샷 등록 + 데이터 품질 점검 (01_data_quality.xlsx)")
     e0.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
     e0.add_argument("--out", default="out")
@@ -116,7 +117,7 @@ def main() -> None:
         import json
 
         from .chain import run_all
-        print(json.dumps(run_all(load_config(), a.input, a.out, a.min_df), ensure_ascii=False, indent=1, default=str))
+        print(json.dumps(run_all(load_config(), a.input, a.out, a.min_df, rebuild_e3=a.rebuild_e3), ensure_ascii=False, indent=1, default=str))
         return
     if a.cmd == "e5b":
         import json

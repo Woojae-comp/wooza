@@ -41,7 +41,7 @@ def set_pointer(run_id: str, path: Path = CONFIG) -> None:
     path.write_text(s2, encoding="utf-8")
 
 
-def run_all(cfg: dict, paths: list[str] | None, out_dir: str, min_df: int = 5, log=print) -> dict:
+def run_all(cfg: dict, paths: list[str] | None, out_dir: str, min_df: int = 5, log=print, rebuild_e3: bool = False) -> dict:
     from .e0 import check_schema, input_files, run_e0
     from .e2 import run_e2
     from .e3 import run_e3
@@ -86,6 +86,8 @@ def run_all(cfg: dict, paths: list[str] | None, out_dir: str, min_df: int = 5, l
     steps["e2"] = e2_run
 
     try:
+        if rebuild_e3:
+            raise LookupError("rebuild")
         e3_run = selected_e3(REGISTRY, e2_run)
         log(f"[E3] 재사용 {e3_run}")
     except Exception:
