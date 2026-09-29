@@ -391,7 +391,7 @@ REVIEW 처리: 후보 추출·문서빈도·C-value·지속성·엔트로피·�
   보관 400건(batch_008~015, 50건씩, 가이드 v1.1)을 GPT·Opus 5.5로 판정 → 같은 기준으로 확인 → 통과 시 후보 등록·결정 기록.
 
 ### 보관 400건 1차 확인 (2026-09-29, Opus 5.5 단독 — GPT 판정 대기)
-- batch_008~015 Opus 5.5 응답(400행 한 번에, 모델 표기는 추정) 병합: 형식·근거 문구 오류 0. 분포 MARKET 281 / OTHER 66 / CONTENT 48 / UNRESOLVED 5.
+- batch_008~015 Opus 5.5 응답(400행 한 번에, 사용자 확인) 병합: 형식·근거 문구 오류 0. 분포 MARKET 281 / OTHER 66 / CONTENT 48 / UNRESOLVED 5.
 - 같은 기준(`e23c_gates`)으로 대조, 참고 판정 = Opus 단독 (잠정):
 
   | 후보 | CONTENT | MARKET | OTHER | 대표표본 유입률 | 유입 중 CONTENT 비중 | 통과 |
