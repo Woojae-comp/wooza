@@ -230,7 +230,7 @@ e5b:
   window_months: 6            # 계보 창 길이
   step_months: 3              # 창 이동 간격
   min_topic_weight: 10        # 창 K = 창 안 가중 기사 이 이상인 고정 주제 수
-  null_quantile: 0.95         # 이웃 창 연결 기준 = 전체 쌍 코사인의 이 분위
+  link_quantile: 0.05         # 이웃 창 연결 기준 = 서로 최선 짝인 쌍 코사인의 이 하위 분위 (전체 쌍 95% 분위는 0.23으로 너무 느슨했음)
 
 e4:
   # E4 주제 군집·네트워크. 문서 K-means = 주제 기본 단위, NPMI·Leiden = 주제 구성 관계. 자동 선택은 Borda 순위 평균(제안)

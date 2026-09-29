@@ -9,7 +9,7 @@
    - 그 밖은 주제 신호 유형. 보조 표시: cross_sector(최근 12개월 활성 분야 수·정규화 엔트로피), entity_driven(최근 12개월 상위 기업 점유),
      keyword_support(주제 상위 키워드 중 E5a Emerging·Growing·Event Spike 비율).
 4) 계보(E4.3): window_months 창을 step_months 간격으로 밀며, 같은 LSA 공간에서 창 안 기사만 K-means (K = 창에서 가중 min_topic_weight 이상인 고정 주제 수).
-   이웃 창 군집을 중심 코사인으로 잇는다. 연결 기준은 사람 값이 아니라 이웃 창 전체 쌍 코사인 분포의 상위 분위(null_quantile).
+   이웃 창 군집을 중심 코사인으로 잇는다. 연결 기준은 서로 최선 짝인 쌍(분명한 이어짐) 코사인 분포의 하위 분위(link_quantile).
    사건: continued(1:1) / split(1:다) / merged(다:1) / new(선행 없음) / ended(후행 없음). 창 군집은 가중 다수 고정 주제에 대응(purity 기록).
    고정 주제별로 최근 창의 사건을 lineage_recent로 붙인다 → 고정 모델이 최근 구조 변화를 놓치는지 점검.
 """
@@ -63,15 +63,22 @@ def windows(months: list[str], tc: int, size: int, step: int) -> list[tuple[int,
     return out[::-1]
 
 
-def link_windows(Ca: np.ndarray, Cb: np.ndarray, thr: float) -> list[tuple[int, int, float]]:
-    """이웃 창 군집 연결: 코사인 ≥ thr 이면서 한쪽의 최선 짝인 쌍."""
-    na = Ca / np.maximum(np.linalg.norm(Ca, axis=1, keepdims=True), 1e-12)
-    nb = Cb / np.maximum(np.linalg.norm(Cb, axis=1, keepdims=True), 1e-12)
-    S = na @ nb.T
+def cos(A: np.ndarray, B: np.ndarray) -> np.ndarray:
+    na = A / np.maximum(np.linalg.norm(A, axis=1, keepdims=True), 1e-12)
+    nb = B / np.maximum(np.linalg.norm(B, axis=1, keepdims=True), 1e-12)
+    return na @ nb.T
+
+
+def mutual_best(S: np.ndarray) -> np.ndarray:
+    """서로가 최선 짝인 쌍의 코사인 (분명한 이어짐의 분포)."""
     ba, bb = S.argmax(1), S.argmax(0)
-    links = {(i, int(ba[i])) for i in range(len(Ca)) if S[i, ba[i]] >= thr}
-    links |= {(int(bb[j]), j) for j in range(len(Cb)) if S[bb[j], j] >= thr}
-    return sorted((i, j, float(S[i, j])) for i, j in links)
+    return np.array([S[i, ba[i]] for i in range(S.shape[0]) if bb[ba[i]] == i])
+
+
+def link_windows(Ca: np.ndarray, Cb: np.ndarray, thr: float) -> list[tuple[int, int, float]]:
+    """이웃 창 군집 연결: 코사인 ≥ thr 인 모든 쌍 (한 군집이 둘 이상과 이어지면 분할·병합)."""
+    S = cos(Ca, Cb)
+    return [(int(i), int(j), float(S[i, j])) for i, j in zip(*np.where(S >= thr))]
 
 
 def lineage_events(n_a: int, n_b: int, links: list[tuple[int, int, float]]) -> dict[str, list]:
@@ -95,7 +102,7 @@ def run_lineage(emb: dict, asg: pd.DataFrame, months: list[str], tc: int, rules:
     from sklearn.cluster import KMeans
 
     size, step = rules.get("window_months", 6), rules.get("step_months", 3)
-    minw, q = rules.get("min_topic_weight", 10.0), rules.get("null_quantile", 0.95)
+    minw, q = rules.get("min_topic_weight", 10.0), rules.get("link_quantile", 0.05)
     a = asg.set_index("gid").loc[emb["gid"]]
     mon = pd.to_datetime(a["date"]).dt.to_period("M").astype(str).map({m: i for i, m in enumerate(months)}).to_numpy()
     ok = a["assignment_confidence"].isin(CONF_OK).to_numpy()
@@ -114,13 +121,9 @@ def run_lineage(emb: dict, asg: pd.DataFrame, months: list[str], tc: int, rules:
             share = pd.Series(w[rc]).groupby(fixed[rc]).sum().sort_values(ascending=False)
             maj.append((share.index[0], float(share.iloc[0] / share.sum()), float(w[rc].sum())))
         clus.append({"window": f"{months[s]}~{months[e]}", "centers": km.cluster_centers_, "major": maj})
-    # 연결 기준: 이웃 창 전체 쌍 코사인 분포의 상위 분위 (대부분 쌍은 무관하므로 null 분포로 본다)
-    sims = []
-    for A, B in zip(clus, clus[1:]):
-        na = A["centers"] / np.linalg.norm(A["centers"], axis=1, keepdims=True)
-        nb = B["centers"] / np.linalg.norm(B["centers"], axis=1, keepdims=True)
-        sims.append((na @ nb.T).ravel())
-    thr = float(np.quantile(np.concatenate(sims), q)) if sims else 1.0
+    # 연결 기준: 서로 최선 짝인 쌍(분명한 이어짐) 코사인 분포의 하위 분위 — 이어졌다고 하려면 전형적인 이어짐만큼은 닮아야 한다
+    mb = np.concatenate([mutual_best(cos(A["centers"], B["centers"])) for A, B in zip(clus, clus[1:])]) if len(clus) > 1 else np.array([1.0])
+    thr = float(np.quantile(mb, q))
     rows = []
     for k, (A, B) in enumerate(zip(clus, clus[1:])):
         links = link_windows(A["centers"], B["centers"], thr)

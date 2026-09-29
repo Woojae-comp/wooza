@@ -431,3 +431,20 @@ REVIEW 처리: 후보 추출·문서빈도·C-value·지속성·엔트로피·�
     빠진 Growing에 'DLC'·'대형 신작'·'IP 사업'·'네오위즈' 같은 콘텐츠 신호가, 새 Emerging에 '실적 추정'·'밸류 체인' 같은 시장어가 들어왔다.
 - 결론: **가중 방식 불채택, 운영은 판정 가중(half) 유지** (`relevance_weighting.mode: half`). 시장 기사 유입은 E2에서 거르기보다
   E3 시장어 분리·E4.2 잡음 주제 표시로 하류에서 다루는 현 구조를 유지한다.
+
+### E5b 주제 트렌드 + E4.3 계보 (2026-09-29, E4.2 run_20260929_094536_96c3 → E5b run_20260929_095032_f411, `python -m trend_radar e5b`)
+- **고정 모델 월별 배정**: E4.2 기본 모델(LSA100 K120)의 기사 배정을 그대로 월별로 모은다 (월마다 재군집하지 않아 주제 번호가 흔들리지 않음).
+  주제 × 월 가중 기사 수(HIGH·LOW 배정, 판정 가중), 월별 합은 유입 기사 전체. E4.2가 LSA 임베딩(`07c_lsa_embedding.npz`)을 함께 저장.
+- **주제 신호**: E5a와 같은 규칙(signal_row)을 주제 계열에 적용. 확정월 2026-08 (2026-09 잠정), 좌측 절단, p_rel 가중 민감도.
+- **최종 유형 trend_type**: E4.2 잡음 후보 → Noise(목록 제외, 25개). 나머지 95개:
+  Established 24 / Stable 19 / Growing 8 / Declining 5 / Event Spike 3 / Insufficient 36 (월 가중 기사 5건 미만). Emerging 0 — 고정 주제 대부분이 수집 초기부터 존재(좌측 절단).
+  - Growing 예: 카카오톡·카카오 AI 개편, CJ ENM·티빙·웨이브, 펄어비스 붉은사막, 네오위즈 P의 거짓, SOOP 스트리밍, AI 투자, 드라마 제작 계약, 위메이드 나이트 크로우.
+  - Event Spike 예: 젠슨 황 방한·게임사 회동, 위메이드–액토즈 미르 IP 중재 취하, 컴투스 제우스 출시.
+  - Declining 예: BTS 월드투어, 스튜디오드래곤 제작, 중국 판호.
+  - 보조 표시: cross_sector 31, entity_driven 56(최근 12개월 주제 가중의 절반 이상이 한 기업), 민감도 불일치 8, keyword_support(상위 키워드 중 E5a 상승 신호 비율).
+- **계보(E4.3)**: 6개월 창을 3개월씩 밀며 같은 LSA 공간에서 재군집(K = 창 안 가중 10 이상 고정 주제 수), 이웃 창 중심 코사인으로 연결.
+  - 연결 기준: 서로 최선 짝인 쌍(분명한 이어짐) 코사인의 하위 5% 분위 = 0.83. 처음 쓴 전체 쌍 95% 분위(0.23)는 거의 모든 군집을 이어 너무 느슨했다.
+  - 최근 창(2026-03~08): continued 68 / new 18 / ended 16 / split 10 / merged 9. 창 군집의 고정 주제 순도 0.79~0.86.
+  - 고정 주제별 `lineage_recent`: 95개 중 37개가 최근 창에서 continued 외 사건 → 고정 모델이 놓칠 수 있는 구조 변화 점검 목록.
+  - 한계: 창별 K-means 자체의 불안정도 new/ended로 나타난다 (시드 비교는 다음 단계).
+- 산출: `06b_topic_trend.csv`, `06b_topic_trend_monthly.parquet`, `07d_topic_lineage.csv`, `07d_window_purity.csv`, `e5b_summary.json`.
