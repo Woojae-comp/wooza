@@ -17,6 +17,8 @@ def main() -> None:
     r.add_argument("--lexicon", help="승인된 정제 규칙 (기본 lexicon.yaml)")
     r.add_argument("--out", help="출력 폴더 (기본 out)")
     r.add_argument("--no-candidates", action="store_true", help="불용어·동의어·복합어 후보 생략")
+    ex = sub.add_parser("export", help="대시보드 평가 묶음: 주제 트렌드·월별 비중·키워드 신호·레이더 목록 TSV + 평가 열 (out/eval/*.zip)")
+    ex.add_argument("--out", default="out")
     al = sub.add_parser("all", help="기본 원자료 → 형식 확인·E0·E2(승인 모델 재적용)·E3·E4.2·E5a·E5b·화면을 한 번에")
     al.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
     al.add_argument("--out", default="out")
@@ -102,6 +104,13 @@ def main() -> None:
 
         from .review import merge_responses
         print(json.dumps(merge_responses(Path(a.dir)), ensure_ascii=False, indent=1, default=str))
+        return
+    if a.cmd == "export":
+        import json
+        from pathlib import Path
+
+        from .export import export_pack
+        print(json.dumps(export_pack(Path(a.out)), ensure_ascii=False, indent=1))
         return
     if a.cmd == "all":
         import json
