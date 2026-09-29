@@ -384,3 +384,64 @@ def run_e5b(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
         "e42_run": e42_run, "e5a_run": e5_run, "status": "SUCCESS", "result": summary["trend_type_counts"]})
     run.finish()
     return summary
+
+
+# ---------------------------------------------------------------- 화면용
+
+def latest_e5b_run(out_root: Path) -> str | None:
+    from .runlog import REGISTRY
+
+    p = REGISTRY / "run_registry.jsonl"
+    if not p.exists():
+        return None
+    recs = [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines() if l.strip()]
+    ok = [r["run_id"] for r in recs if r.get("kind") == "e5b_topic_trend" and r.get("status") == "SUCCESS"
+          and (out_root / "runs" / r["run_id"] / "06b_topic_trend.csv").exists()]
+    return ok[-1] if ok else None
+
+
+def topic_payload(out_root: Path, run_id: str | None = None, n_articles: int = 4) -> dict | None:
+    """레이더 화면 '주제 트렌드' 탭 자료. E5b 실행이 없으면 None."""
+    run_id = run_id or latest_e5b_run(out_root)
+    if not run_id:
+        return None
+    d = out_root / "runs" / run_id
+    summ = json.loads((d / "e5b_summary.json").read_text(encoding="utf-8"))
+    t = pd.read_csv(d / "06b_topic_trend.csv", keep_default_na=False)
+    mon = pd.read_parquet(d / "06b_topic_trend_monthly.parquet")
+    months = sorted(mon["month"].unique())
+    series = mon.pivot(index="topic_id", columns="month", values="share_per_1000").reindex(columns=months).fillna(0)
+    reg = pd.read_csv(out_root / "runs" / summ["e42_run"] / "07c_topic_registry.csv", keep_default_na=False).set_index("topic_id")
+    asg = pd.read_parquet(out_root / "runs" / summ["e42_run"] / "07c_article_assignment.parquet", columns=["gid", "date"]).set_index("gid")
+
+    def reps(tid: str) -> list[dict]:
+        raw = str(reg["representative_articles"].get(tid, "")) if tid in reg.index else ""
+        out = []
+        for part in [p.strip() for p in raw.split("||") if p.strip()][:n_articles]:
+            gid, _, title = part.partition(" ")
+            dt = asg["date"].get(gid)
+            out.append({"t": title, "d": str(pd.Timestamp(dt).date()) if dt is not None else ""})
+        return out
+
+    def stable_lineage(v: str) -> list[str]:
+        # split·merged는 군집 무작위성과 구별되지 않아 화면에 쓰지 않는다 (E4.3 안정성 결과)
+        return [e for e in str(v).split(";") if e in ("new", "ended")]
+
+    num = lambda x: None if x in ("", None) else float(x)
+    rows = []
+    for r in t.to_dict("records"):
+        tid = r["topic_id"]
+        rows.append({"id": tid, "type": r["trend_type"], "res": r["signal_resolution"], "kws": r["top_keywords"].split(", ")[:10],
+                     "e42": r["topic_type_e42"], "noise": int(r["noise_excluded"]), "noise_codes": r["noise_reason_codes"],
+                     "ratio6": num(r["ratio_6m"]), "rz": num(r["robust_z"]), "pers12": num(r["persistence_12m"]),
+                     "w12": num(r["weighted_articles_12m"]), "wlast": num(r["weighted_articles_last"]),
+                     "share_last": num(r["share_per_1000_last"]), "sectors": int(r["sectors_active_12m"] or 0),
+                     "cross": str(r["cross_sector"]) == "True", "entity": str(r["entity_driven"]) == "True",
+                     "company": r["top_company_12m"], "company_share": num(r["top_company_share_12m"]),
+                     "support": num(r["keyword_support"]), "sens": int(r["sensitivity_flag"]), "soft": r["signal_type_soft"],
+                     "prov": r["signal_type_provisional"], "lineage": stable_lineage(r.get("lineage_recent", "")),
+                     "series": [round(float(x), 3) for x in series.loc[tid].tolist()] if tid in series.index else [],
+                     "arts": reps(tid)})
+    return {"run_id": run_id, "e42_run": summ["e42_run"], "asof": summ["signal_asof"], "partial": summ.get("partial_month"),
+            "months": months, "counts": summ.get("trend_type_counts", {}), "resolution": summ.get("signal_resolution_counts", {}),
+            "lineage": summ.get("lineage_stability", {}), "rows": rows}

@@ -72,7 +72,14 @@ main { max-width: 1280px; margin: 0 auto; padding: 16px; }
 .tag.Emerging { background: var(--tag-emerging); } .tag.Growing { background: var(--tag-growing); }
 .tag.Established { background: var(--tag-established); } .tag.Spreading { background: var(--tag-spreading); }
 .tag.Converging { background: var(--tag-converging); } .tag.Declining { background: var(--tag-declining); }
-.tag.Event-driven { background: var(--tag-event); } .tag.company { background: var(--tag-company); border-style: dashed; }
+.tag.Event-driven { background: var(--tag-event); } .tag.Stable { background: var(--surface-2); } .tag.EventSpike { background: var(--tag-event); }
+.tag.LowVolume, .tag.Noise { background: transparent; color: var(--muted); border-style: dashed; }
+.tag.res { background: transparent; color: var(--text-2); }
+.tfilter { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.tfilter button { font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; }
+.tfilter button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.card.topic .kws { margin-top: 6px; }
+.card.topic .meta { font-size: 12px; color: var(--text-2); margin-top: 4px; } .tag.company { background: var(--tag-company); border-style: dashed; }
 .spark { display: block; width: 100%; height: 30px; margin-top: 6px; }
 .spark path.l { fill: none; stroke: var(--accent); stroke-width: 1.5; }
 .spark path.a { fill: var(--accent); opacity: .10; }
@@ -216,6 +223,7 @@ const TABS = [
   ["overall", "A 산업 전체"], ["sector", "B 분야별"], ["cross", "C 분야 간 공통"], ["conv", "D 융합 신호"],
   ["emerging", "E 부상·성장·쇠퇴"], ["struct", "F 구조 변화"], ["time", "시계열 군집"], ["explore", "키워드 탐색"], ["review", "정제 검토"],
 ];
+if (ALL.topics) TABS.splice(1, 0, ["topics", "주제 트렌드"]);
 const render = {};
 
 render.overall = () => {
@@ -239,6 +247,53 @@ function clusterCard(c, chg) {
   return `<div class="card cluster"><div class="top" style="display:flex;justify-content:space-between;gap:8px"><b>[${esc(c.name_candidate)}]</b><span class="muted" style="white-space:nowrap">키워드 ${c.size} · 기사 ${(c.articles ?? 0).toLocaleString()}</span></div>
     ${change}<div class="kws">${kws}</div><details><summary class="muted">대표 기사</summary>${arts}</details></div>`;
 }
+
+// ---------------------------------------------------------------- 주제 트렌드 (E5b)
+const TT_KO = {"Emerging":"부상","Growing":"성장","Established":"정착","Stable":"유지","Declining":"쇠퇴","Event Spike":"급등","Low volume":"저빈도","Noise":"잡음 후보","Insufficient":"자료 부족"};
+const TT_ORDER = ["Growing","Emerging","Event Spike","Established","Stable","Declining","Low volume"];
+const RES_KO = {month:"월 판정", quarter:"분기 판정", low_volume:"저빈도"};
+let topicType = "all";
+function tspark(vals, partial) {
+  const w = 240, h = 30, n = vals.length; if (!n) return "";
+  const mx = Math.max(...vals) || 1;
+  const x = i => (i / (n - 1)) * w, y = v => h - 2 - (v / mx) * (h - 4);
+  const d = vals.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  const r12 = n - 1 - (partial ? 1 : 0) - 11;
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><rect class="r" x="${x(Math.max(r12, 0))}" y="0" width="${w - x(Math.max(r12, 0))}" height="${h}"/><path class="a" d="${d}L${w},${h}L0,${h}Z"/><path class="l" d="${d}" vector-effect="non-scaling-stroke"/></svg>`;
+}
+function topicCard(r, T) {
+  const cls = r.type.replace(/\s/g, "");
+  const tags = [`<span class="tag ${cls}">${TT_KO[r.type] || r.type}</span>`];
+  if (r.res !== "month" && r.type !== "Noise") tags.push(`<span class="tag res" title="월 기사가 부족해 3개월 묶음으로 판정">${RES_KO[r.res]}</span>`);
+  if (r.lineage.includes("new")) tags.push(`<span class="tag Emerging" title="최근 6개월 창에서 새로 생긴 군집 (시드 과반)">새 흐름</span>`);
+  if (r.lineage.includes("ended")) tags.push(`<span class="tag Declining" title="최근 6개월 창에서 이어지지 않은 군집 (시드 과반)">흐름 종료</span>`);
+  if (r.cross) tags.push(`<span class="tag Spreading" title="최근 12개월 ${r.sectors}개 분야">분야 확산</span>`);
+  if (r.entity) tags.push(`<span class="tag company" title="최근 12개월 주제 기사의 ${Math.round((r.company_share || 0) * 100)}%">기업 중심 · ${esc(r.company)}</span>`);
+  if (r.sens) tags.push(`<span class="tag res" title="p_rel 가중으로 다시 판정하면 ${esc(TT_KO[r.soft] || r.soft)}">가중 민감</span>`);
+  const kws = r.kws.map(w => `<span class="pill ${P[w] ? "link" : ""}" data-k="${esc(w)}">${esc(w)}</span>`).join("");
+  const arts = r.arts.map(a => `<div class="art"><b>${esc(a.t)}</b><div class="m">${esc(a.d)}</div></div>`).join("");
+  const nums = r.type === "Noise" ? `<span class="muted">${esc(r.noise_codes || r.e42)}</span>` :
+    `최근 12개월 가중 ${fx(r.w12, 0)}건 · 6개월 비 ${fx(r.ratio6, 2)}배 · 12개월 지속 ${pct(r.pers12, 0)}${r.support != null ? ` · 키워드 상승 ${pct(r.support, 0)}` : ""}`;
+  return `<div class="card topic"><div class="top" style="display:flex;justify-content:space-between;gap:8px"><b>${esc(r.kws.slice(0, 3).join(" · "))}</b><span class="muted" style="white-space:nowrap">${esc(r.id)}</span></div>
+    <div class="tags">${tags.join("")}</div>${tspark(r.series, T.partial)}<div class="meta">${nums}</div>
+    <div class="kws">${kws}</div>${arts ? `<details><summary class="muted">대표 기사</summary>${arts}</details>` : ""}</div>`;
+}
+render.topics = () => {
+  const T = ALL.topics, rows = T.rows.filter(r => !r.noise), noise = T.rows.filter(r => r.noise);
+  const cnt = t => rows.filter(r => r.type === t).length;
+  const types = TT_ORDER.filter(cnt);
+  const shown = (topicType === "all" ? rows : rows.filter(r => r.type === topicType))
+    .sort((a, b) => TT_ORDER.indexOf(a.type) - TT_ORDER.indexOf(b.type) || (b.w12 || 0) - (a.w12 || 0));
+  const L = T.lineage || {};
+  return `<div class="intro">E4.2 주제 ${T.rows.length}개(고정 모델)의 월별 기사 비중으로 판정한 주제 트렌드입니다. 위의 층(콘텐츠·자본시장) 선택과 무관하게 E2 관련성 판정 기사 전체를 씁니다. 확정 판정 기준월 ${esc(T.asof)}${T.partial ? ` (${esc(T.partial)}은 불완전월이라 제외)` : ""}.
+    월 기사가 부족한 주제는 3개월 묶음으로 다시 판정하고, 그래도 부족하면 저빈도로 둡니다. 유형은 제안이며 대표 기사를 보고 최종 판단하세요.</div>
+  <div class="tfilter"><button data-tt="all" class="${topicType === "all" ? "on" : ""}">전체 ${rows.length}</button>${types.map(t => `<button data-tt="${t}" class="${topicType === t ? "on" : ""}">${TT_KO[t]} ${cnt(t)}</button>`).join("")}</div>
+  <div class="note">판정 단위: 월 ${T.resolution.month || 0} · 분기 ${T.resolution.quarter || 0} · 저빈도 ${T.resolution.low_volume || 0}. 음영은 최근 12개월.
+    '새 흐름'·'흐름 종료'는 6개월 창 재군집에서 시드 과반으로 확인된 사건만 표시합니다 (분할·병합은 군집 무작위성과 구별되지 않아 표시하지 않음${L.excess_over_null ? `; 무작위성 기준 대비 new +${L.excess_over_null.new}, ended +${L.excess_over_null.ended}` : ""}).</div>
+  <div class="grid" style="margin-top:8px">${shown.map(r => topicCard(r, T)).join("") || '<div class="muted">해당 없음</div>'}</div>
+  <details style="margin-top:16px"><summary class="muted">잡음 후보 주제 ${noise.length}개 (트렌드 판정에서 제외, E4.2 잡음 사유)</summary><div class="grid" style="margin-top:8px">${noise.map(r => topicCard(r, T)).join("")}</div></details>
+  <div class="note" style="margin-top:10px">출처: E5b ${esc(T.run_id)} · E4.2 ${esc(T.e42_run)}</div>`;
+};
 
 let curSector = null;
 render.sector = () => {
@@ -476,6 +531,7 @@ document.addEventListener("click", e => {
   const r = e.target.closest("[data-r]"); if (r) { revTab = r.dataset.r; return show("review"); }
   const f = e.target.closest("[data-f]"); if (f) { revFilter = f.dataset.f; return show("review"); }
   const ss = e.target.closest("[data-s]"); if (ss) { structSort = ss.dataset.s; return show("struct"); }
+  const tt = e.target.closest("[data-tt]"); if (tt) { topicType = tt.dataset.tt; return show("topics"); }
 });
 document.addEventListener("change", e => {
   if (e.target.id === "secSel") { curSector = e.target.value; show("sector"); }

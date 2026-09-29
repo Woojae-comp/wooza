@@ -84,13 +84,20 @@ def _slim(result: dict, top_profiles: int = 150) -> dict:
     return r
 
 
-def write_html(results: dict, path: Path) -> None:
-    """results: {층 키: 결과}. 층이 여럿이면 화면 위쪽에서 전환한다."""
+def write_html(results: dict, path: Path, topics: dict | None = None) -> None:
+    """results: {층 키: 결과}. 층이 여럿이면 화면 위쪽에서 전환한다.
+    topics: E5b 주제 트렌드 (없으면 출력 폴더의 최신 E5b 실행을 찾고, 그것도 없으면 탭을 숨긴다)."""
+    from .e5b import topic_payload
     from .pipeline import _jsonable
 
     if "meta" in results:  # 단일 결과
         results = {"all": results}
-    payload = {"layers": {k: _slim(v) for k, v in results.items()}}
+    if topics is None:
+        try:
+            topics = topic_payload(Path(path).parent)
+        except (FileNotFoundError, KeyError, ValueError):
+            topics = None
+    payload = {"layers": {k: _slim(v) for k, v in results.items()}, "topics": topics}
     data = json.dumps(payload, ensure_ascii=False, default=_jsonable).replace("</", "<\\/")
     html = TEMPLATE.read_text(encoding="utf-8").replace("/*__DATA__*/null", data)
     Path(path).write_text(html, encoding="utf-8")
