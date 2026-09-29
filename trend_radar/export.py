@@ -36,6 +36,12 @@ README = """# Trend Radar 평가 묶음
 | 02_topic_monthly.tsv | {n_topics} | 주제별 월간 기사 비중 (유입 기사 1,000건당). 마지막 달이 불완전월이면 판정에서 제외됨 |
 | 03_keyword_signals.tsv | {n_kw} | 키워드 시계열 신호 (자료 부족 제외) |
 | 04_radar_lists.tsv | {n_list} | 키워드 레이더 화면 목록 (층: content=콘텐츠·사업, market=자본시장) |
+| spec/SPEC_CURRENT.md | | 현행 명세 (운영 방식·규칙·검증 체계·알려진 한계) |
+| spec/TREND_RADAR_V2.md | | 실험 기록 (시도·실패·수치 이력) |
+| spec/trend_radar.yaml | | 설정값 전체 |
+| spec/annotation_guide.md | | 콘텐츠 관련성 판정 가이드 v1.1 (LLM 검토 기준) |
+| spec/decision_log.jsonl | | 결정 기록 (사용자·보조 연구자·파이프라인) |
+| spec/improvement_prompt.md | | 개선안 검토 요청문 (이 묶음과 함께 LLM에 붙여 넣기) |
 
 ## 평가 방법 (eval_* 열에 기입, 비워 두면 미평가)
 - eval_topic_coherent: 키워드·대표 기사가 하나의 이야기로 묶이는가 (Y / N / ?)
@@ -148,8 +154,21 @@ def export_pack(out_root: Path, dest: Path | None = None) -> dict:
         created=datetime.now().strftime("%Y-%m-%d %H:%M"), snapshot=snap, asof=pl["asof"],
         partial=f" ({pl['partial']} 불완전월 제외)" if pl.get("partial") else "", e5b=e5b, e42=summ["e42_run"], e5a=summ["e5a_run"],
         n_topics=len(t), n_kw=len(k), n_list=len(rl)), encoding="utf-8")
+    # 명세 묶음: 개선 작업용 (현행 명세, 실험 기록, 설정, 판정 가이드, 결정 기록, 개선 검토 요청문)
+    import shutil
+
+    from .runlog import REGISTRY
+    root = Path(__file__).resolve().parent.parent
+    spec = dest / "spec"
+    spec.mkdir(exist_ok=True)
+    for src in (root / "docs" / "SPEC_CURRENT.md", root / "docs" / "TREND_RADAR_V2.md", root / "trend_radar.yaml",
+                root / "docs" / "review" / "annotation_guide.md", REGISTRY / "decision_log.jsonl",
+                root / "docs" / "review" / "improvement_prompt.md"):
+        if src.exists():
+            shutil.copy2(src, spec / src.name)
     zp = dest.with_suffix(".zip")
     with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED) as z:
-        for f in sorted(dest.iterdir()):
-            z.write(f, f.name)
+        for f in sorted(dest.rglob("*")):
+            if f.is_file():
+                z.write(f, f.relative_to(dest).as_posix())
     return {"dir": str(dest), "zip": str(zp), "rows": {n: len(d) for n, d in files.items()}}
