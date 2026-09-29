@@ -206,7 +206,8 @@ def run_e5a(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
         keep = keep[keep["keyword"].isin(idx)]
         cols = keep["keyword"].map(idx).to_numpy()
         Xk = X[:, cols].tocsr()
-        half = inp.loc[rows, "content_weight_half"].to_numpy()
+        from .selection import relevance_weight
+        half = relevance_weight(inp.loc[rows, "content_weight_half"].to_numpy(), rows, cfg, out_root)
         soft = inp.loc[rows, "content_weight_soft"].to_numpy()
         st["rows_out"] = len(keep)
 

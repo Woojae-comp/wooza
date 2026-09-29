@@ -208,10 +208,11 @@ def run_e42(cfg: dict, raw: pd.DataFrame, out_root: Path) -> dict:
         arts = corpus.articles.reset_index(drop=True)
         assert arts["gid"].astype(str).tolist() == rows.tolist(), "E3 행렬과 기사 집합이 다르다 (스냅샷 확인)"
         gids = arts["gid"].to_numpy()
-        half = inp.loc[gids, "content_weight_half"].to_numpy()
+        from .selection import relevance_weight
+        half = relevance_weight(inp.loc[gids, "content_weight_half"].to_numpy(), gids, cfg, out_root)
         prel = inp.loc[gids, "content_weight_soft"].to_numpy()
         decision = inp.loc[gids, "relevance_decision"].to_numpy()
-        use = half > 0
+        use = inp.loc[gids, "content_weight_half"].to_numpy() > 0
         st["rows_out"] = int(use.sum())
 
     # ------------------------------------------------ 노드 유형 + GENERIC_BRIDGE

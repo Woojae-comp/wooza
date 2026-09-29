@@ -367,6 +367,13 @@ e23_gates:
   broadcast_excess_pp: 2.0
   include_change_max: 0.30    # INCLUDE 수가 30% 이상 바뀌면 자동 확정하지 않음
 
+relevance_weighting:
+  # E4·E5 기사 가중치. half = E2 판정 가중 (운영). half_x_pcontent = 판정 가중 × E2.3c P(CONTENT) (민감도 실험, 유입 여부는 그대로)
+  mode: half
+  variants_run: run_20260929_080416_5969
+  column: p_content_H2_event
+  floor: 0.0
+
 e23c_gates:
   # E2.3c 사건 이슈 보강 — 가이드 v1.1 개발용 비교 기준 (LLM 합의 = 참고 판정)
   noncontent_reduction_min: 0.3   # 합의 MARKET+OTHER 의 INCLUDE+REVIEW 유입을 E2.1 대비 30% 이상 줄인다

@@ -63,3 +63,18 @@ def test_event_family_abstains_on_politics_and_broadcaster(monkeypatch):
 
     p = {"F": F, "arts": pd.DataFrame({"gid": list("abc")}), "corpus": Corp()}
     assert m.event_family(p, {"cleaning": {}, "e2": {}}).tolist() == [True, False, False]
+
+
+def test_relevance_weight_modes(tmp_path):
+    from trend_radar.selection import SelectionError, relevance_weight
+
+    half = np.array([1.0, 0.5, 0.0])
+    assert relevance_weight(half, ["a", "b", "c"], {}, tmp_path) is half
+    (tmp_path / "runs" / "r1").mkdir(parents=True)
+    pd.DataFrame({"gid": ["a", "b", "c"], "p_content_H2_event": [0.2, 0.0, 0.9]}) \
+        .to_parquet(tmp_path / "runs" / "r1" / "02c_relevance_variants.parquet")
+    cfg = {"relevance_weighting": {"mode": "half_x_pcontent", "variants_run": "r1", "floor": 0.1}}
+    assert np.allclose(relevance_weight(half, ["a", "b", "c"], cfg, tmp_path), [0.2, 0.05, 0.0])
+    import pytest
+    with pytest.raises(SelectionError):
+        relevance_weight(half, ["a", "zz"], cfg, tmp_path)

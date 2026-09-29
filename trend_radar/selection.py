@@ -11,6 +11,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
+
 
 class SelectionError(RuntimeError):
     pass
@@ -61,3 +64,20 @@ def mark_failed(registry: Path, run_id: str, model_id: str, variants: list[str],
     rec = {"run_id": run_id, "model_id": model_id, "variants": variants, "candidate_failed": 1, "reason": reason, "marked_at": now()}
     append_jsonl(registry / "candidate_status.jsonl", rec)
     return rec
+
+
+def relevance_weight(half: np.ndarray, gids, cfg: dict, out_root: Path) -> np.ndarray:
+    """E4·E5 기사 가중치. 기본은 E2 판정 가중(INCLUDE 1 / REVIEW 0.5 / EXCLUDE 0) 그대로.
+    relevance_weighting.mode = 'half_x_pcontent' 이면 E2.3c 변형 산출물의 P(CONTENT)를 곱한다
+    (유입 여부는 E2 판정 그대로, 유입 기사 안에서 시장 기사 비중만 낮춘다)."""
+    rw = cfg.get("relevance_weighting") or {}
+    if rw.get("mode", "half") == "half":
+        return half
+    run = rw.get("variants_run")
+    if not run:
+        raise SelectionError("relevance_weighting.variants_run 이 비어 있다")
+    v = pd.read_parquet(out_root / "runs" / run / "02c_relevance_variants.parquet").set_index("gid")
+    p = v[rw.get("column", "p_content_H2_event")].reindex(list(gids)).to_numpy()
+    if np.isnan(p).any():
+        raise SelectionError("P(CONTENT) 변형 산출물에 없는 기사가 있다 (스냅샷 확인)")
+    return half * np.maximum(p, float(rw.get("floor", 0.0)))

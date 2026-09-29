@@ -55,6 +55,8 @@ def main() -> None:
     e23c.add_argument("--review-dir", help="out/review/review_YYYYMMDD_HHMMSS (병합된 LLM 판정과 대조)")
     for p_ in (e3, e4, e41, e42, e5):
         p_.add_argument("--use-candidate", action="store_true", help="승인 전 후보 E2(e2.candidate_run_id)로 실행")
+    for p_ in (e42, e5):
+        p_.add_argument("--weighting", choices=["half", "half_x_pcontent"], help="기사 가중 방식 (relevance_weighting.mode 덮어씀)")
     rv = sub.add_parser("review-sample", help="E2 비교·검토 표본 600건 추출 + 초기 60건 업로드 파일 (LLM API 호출 없음)")
     rv.add_argument("--input", nargs="+", help="원자료 경로 (xlsx/csv/parquet, glob 가능)")
     rv.add_argument("--out", default="out")
@@ -173,6 +175,8 @@ def main() -> None:
         files = input_files(a.input or cfg["input"]["paths"])
         cfg["_input_files"] = files
         cfg["_use_candidate"] = getattr(a, "use_candidate", False)
+        if getattr(a, "weighting", None):
+            cfg["relevance_weighting"] = {**(cfg.get("relevance_weighting") or {}), "mode": a.weighting}
         s = run_e42(cfg, read_raw(files), Path(a.out))
         print(json.dumps({k: v for k, v in s.items() if k != "networks"}, ensure_ascii=False, indent=1, default=str))
         return
@@ -187,6 +191,8 @@ def main() -> None:
         files = input_files(a.input or cfg["input"]["paths"])
         cfg["_input_files"] = files
         cfg["_use_candidate"] = getattr(a, "use_candidate", False)
+        if getattr(a, "weighting", None):
+            cfg["relevance_weighting"] = {**(cfg.get("relevance_weighting") or {}), "mode": a.weighting}
         s = run_e5a(cfg, read_raw(files), Path(a.out))
         print(json.dumps(s, ensure_ascii=False, indent=1))
         return
