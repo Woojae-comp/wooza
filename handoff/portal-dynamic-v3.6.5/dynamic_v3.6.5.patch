@@ -1,0 +1,197 @@
+diff --git a/assets/app.js b/assets/app.js
+index 4ea4f55..2608a11 100644
+--- a/assets/app.js
++++ b/assets/app.js
+@@ -10,3 +10,25 @@
+   const uniqCount=arr=>new Set(arr.map(x=>x.eid||x.cid).filter(Boolean)).size;
+-  const sectorByName=Object.fromEntries(D.sectors.map(x=>[x.name,x]));
++  /* 데이터에서 계산하는 값(10-26): 기간·분야·건수·분류·문서 목록은 data.js에 들어온 자료로 정하고 화면에 고정하지 않는다. 자료가 늘면 화면이 따라간다.
++     data.js에 period{start,end}·updated·docs가 있으면 그 값을 우선한다. */
++  const ymd=s=>/^\d{4}-\d{2}-\d{2}/.test(s||'')?String(s).slice(0,10):'';
++  const RANGE=(()=>{const ds=[];for(const e of D.events)if(ymd(e.date))ds.push(ymd(e.date));
++    for(const k of ['disc','strat'])for(const L of Object.values(D[k]||{}))for(const x of L)if(ymd(x.d))ds.push(ymd(x.d));
++    ds.sort();const P=D.period||{};const start=ymd(P.start)||ds[0]||'2024-01-01',end=ymd(P.end)||ds[ds.length-1]||start;
++    const y0=+start.slice(0,4),y1=+end.slice(0,4),m0=+start.slice(5,7),m1=+end.slice(5,7);
++    return {start,end,y0,y1,m0,m1,years:Array.from({length:y1-y0+1},(_,i)=>String(y0+i)),q0:y0+'Q1',ko:`${y0}년 ${m0}월~${y1}년 ${m1}월`};})();
++  const FIN_LAST=(()=>{let m='';for(const L of Object.values(D.fin||{}))for(const x of L)if(x.p>m)m=x.p;return m;})();   // 가장 최근 분기(예: 2026Q2)
++  const finQuarters=y=>!FIN_LAST||y<FIN_LAST.slice(0,4)?4:y===FIN_LAST.slice(0,4)?+FIN_LAST.slice(-1):0;   // 그 해에 공시됐어야 할 분기 수
++  const finScope=n=>n===4?'연간(4개 분기)':n===2?'상반기(1~2분기)':n===1?'1분기':`1~${n}분기 누적`;
++  const UPDATED=ymd(D.updated)||ymd((D.bidxInfo||{}).at)||ymd(D.date)||RANGE.end;
++  const VER=String(D.version||'').replace(/[^0-9A-Za-z.]/g,'')||'data';
++  const ordered=(known,found)=>[...known.filter(k=>found.has(k)),...[...found].filter(k=>!known.includes(k)).sort((a,b)=>a.localeCompare(b,'ko'))];
++  const SECTORS=(()=>{const names=[...new Set([...(D.sectors||[]).map(s=>s.name),...D.companies.map(c=>c.sector)])];
++    return names.map(name=>{const codes=new Set(D.companies.filter(c=>c.sector===name).map(c=>c.code));
++      return {name,companies:codes.size,ips:D.ips.filter(i=>codes.has(i.code)).length,ip_use_rows:D.events.filter(e=>codes.has(e.code)&&e.category==='IP 활용').length};}).filter(s=>s.companies);})();
++  const NOTES=(()=>{const cats={};for(const e of D.events)cats[e.category]=(cats[e.category]||0)+1;
++    return {...(D.notes||{}),company_count:D.companies.length,unique_company_count:new Set(D.companies.map(c=>c.code)).size,ip_count:D.ips.length,event_count:D.events.length,
++      event_categories:Object.fromEntries(ordered(Object.keys((D.notes||{}).event_categories||{}),new Set(Object.keys(cats))).map(k=>[k,cats[k]])),
++      raw_read_count:D.events.filter(e=>e.read==='원문 열람').length,raw_urls:new Set(D.events.map(e=>e.url).filter(Boolean)).size,
++      article_count:new Set(D.events.map(e=>e.url||e.title).filter(Boolean)).size};})();
++  const sectorByName=Object.fromEntries(SECTORS.map(x=>[x.name,x]));
+   // 동일한 분야 설명이 여러 기업에 그대로 배정된 경우 기업별 사실로 소개하지 않는다.
+@@ -23,3 +45,5 @@
+   /* IP 활용 세부 활동(10-23): 사건의 활용 방식(use) 9종. 한 사건이 여러 방식에 해당할 수 있음 */
+-  const USES=[['게임화·게임 내 협업','게임화'],['영상화·애니메이션화','영상·애니화'],['음원·OST','음원·OST'],['공연·뮤지컬·콘서트','공연·콘서트'],['상품화·굿즈·완구','상품화·굿즈'],['웹툰·출판화','웹툰·출판화'],['팝업·전시·체험·공간사업','팝업·전시·공간'],['브랜드 협업·라이선싱','브랜드 협업·라이선싱'],['기타 IP 활용','기타']];
++  const USES=(()=>{const known=[['게임화·게임 내 협업','게임화'],['영상화·애니메이션화','영상·애니화'],['음원·OST','음원·OST'],['공연·뮤지컬·콘서트','공연·콘서트'],['상품화·굿즈·완구','상품화·굿즈'],['웹툰·출판화','웹툰·출판화'],['팝업·전시·체험·공간사업','팝업·전시·공간'],['브랜드 협업·라이선싱','브랜드 협업·라이선싱']];
++    const found=new Set();for(const e of D.events)for(const u of String(e.use||'').split(' · '))if(u.trim()&&u.trim()!=='nan')found.add(u.trim());found.delete('기타 IP 활용');
++    return [...known,...[...found].filter(u=>!known.some(k=>k[0]===u)).sort((a,b)=>a.localeCompare(b,'ko')).map(u=>[u,u]),['기타 IP 활용','기타']];})();   // 새 활용 방식은 자동으로 단추에 추가
+   const usesOf=e=>{const u=String(e.use||'').split(' · ').map(x=>x.trim()).filter(x=>x&&x!=='nan');return u.length?u:['기타 IP 활용'];};
+@@ -29,4 +53,4 @@
+     return `<div class="usebar"><span class="uselabel">IP 활용 세부 활동</span><button class="filterbtn sm ${!cur||cur==='전체'?'active':''}" data-${attr}="전체">전체 ${uniqCount(list)}</button>${items.map(([u,l,n])=>`<button class="filterbtn sm ${cur===u?'active':''}" data-${attr}="${escape(u)}">${escape(l)} ${n}</button>`).join('')}</div>`;};
+-  const categories=['전체','해외 관련','IP 활용','해외 실행·성과','국제 계약·제휴','해외 계획·추진','국내 도입','협업','거래 관계','플랫폼 이용·유통 성과','해외 법인·지분 처분','해외 축소·철수','검토 후보'];
+-  const groups=['전체','자사 원천','자회사 원천','인수 보유','공동 보유','기획·운영 IP','외부 IP','권리 미확인'];
++  const categories=['전체','해외 관련',...ordered(['IP 활용','해외 실행·성과','국제 계약·제휴','해외 계획·추진','국내 도입','협업','거래 관계','플랫폼 이용·유통 성과','해외 법인·지분 처분','해외 축소·철수','검토 후보'],new Set(D.events.map(e=>e.category).filter(Boolean)))];
++  const groups=['전체',...ordered(['자사 원천','자회사 원천','인수 보유','공동 보유','기획·운영 IP','외부 IP','권리 미확인'],new Set(D.ips.map(i=>i.rights_group).filter(Boolean)))];
+   const hash=new URLSearchParams(location.hash.slice(1));
+@@ -52,3 +76,3 @@
+   function cardMetric(label,n){return `<div class="stat"><span>${escape(label)}</span><strong>${Number(n).toLocaleString('ko-KR')}</strong></div>`;}
+-  function renderSidebar(){byId('sectors').innerHTML=`<button class="${state.sector===ALL?'active':''}" data-sector="${ALL}">전체 개요<span>${D.notes.unique_company_count}</span></button>`+D.sectors.map(s=>`<button class="${s.name===state.sector?'active':''}" data-sector="${escape(s.name)}">${escape(s.name)}<span>${s.companies}</span></button>`).join('');}
++  function renderSidebar(){byId('sectors').innerHTML=`<button class="${state.sector===ALL?'active':''}" data-sector="${ALL}">전체 개요<span>${NOTES.unique_company_count}</span></button>`+SECTORS.map(s=>`<button class="${s.name===state.sector?'active':''}" data-sector="${escape(s.name)}">${escape(s.name)}<span>${s.companies}</span></button>`).join('');}
+   function renderSector(){const isAll=state.sector===ALL,hasC=!!state.code&&!isAll;byId('overview').hidden=!isAll;byId('aggregate').hidden=hasC;byId('companySection').hidden=false;byId('profile').hidden=!hasC;
+@@ -82,3 +106,3 @@
+   /* 전체 개요: 데이터 제작 과정 · 확인할 수 있는 것 · 사용법 · 분야 바로가기 · 읽을 때 유의점 */
+-  function renderOverview(){const N=D.notes,uniqEv=new Set(D.events.map(x=>x.eid||x.cid)).size;
++  function renderOverview(){const N=NOTES,uniqEv=new Set(D.events.map(x=>x.eid||x.cid)).size;
+     byId('sectorLabel').textContent='전체 개요';
+@@ -87,7 +111,7 @@
+     const steps=[
+-      ['대상 기업','기관 명부(생애주기 원장)에 등재된 콘텐츠 기업 161개사, 11개 분야. 여러 분야에 등재된 기업은 각 분야에 모두 표시합니다(분야×기업 '+N.company_count+'건).'],
+-      ['원자료','2024년 1월~2026년 10월 기업 관련 기사(제목·요약·원문 URL), DART 공시·사업보고서의 보유 자산 목록, 기업–IP 관계표.'],
+-      ['활동 분석','기업 활동 기사 4,298건을 IP 활용·해외 진출·협업 세 측면으로 나눠 분석했습니다(확인·추정·추가 확인). 같은 활동의 반복 보도는 하나의 사건 ID로 묶었습니다.'],
+-      ['IP 권리 분석','IP 후보 2,091개 항목마다 개체 유형(작품·캐릭터·게임·아티스트 / 기업·채널·매장 등)과 원천 권리(자사·자회사·공동·외부·미확인), 기업의 사업 역할을 따로 분석했습니다. 중요한 항목은 공식 자료·공시로 외부 확인했습니다.'],
+-      ['검증·교정','v3.1~v3.4 단계별 재검토와 사례별 정답표 교정을 거쳤고, 바뀐 값은 모두 교정 로그(이전 값·새 값·근거 URL·사유)로 남겼습니다. 원문을 직접 열람한 사례는 '+N.raw_read_count+'건이며 나머지는 제목·요약 기준 분석입니다.'],
++      ['대상 기업','기관 명부(생애주기 원장)에 등재된 콘텐츠 기업 '+N.unique_company_count+'개사, '+SECTORS.length+'개 분야. 여러 분야에 등재된 기업은 각 분야에 모두 표시합니다(분야×기업 '+N.company_count+'건).'],
++      ['원자료',RANGE.ko+' 기업 관련 기사(제목·요약·원문 URL), DART 공시·사업보고서의 보유 자산 목록, 기업–IP 관계표.'],
++      ['활동 분석','기업 활동 기사 '+N.article_count.toLocaleString('ko-KR')+'건을 IP 활용·해외 진출·협업 세 측면으로 나눠 분석했습니다(확인·추정·추가 확인). 같은 활동의 반복 보도는 하나의 사건 ID로 묶었습니다.'],
++      ['IP 권리 분석','IP '+N.ip_count.toLocaleString('ko-KR')+'개 항목마다 개체 유형(작품·캐릭터·게임·아티스트 / 기업·채널·매장 등)과 원천 권리(자사·자회사·공동·외부·미확인), 기업의 사업 역할을 따로 분석했습니다. 중요한 항목은 공식 자료·공시로 외부 확인했습니다.'],
++      ['검증·교정','v3.1~'+VER+' 단계별 재검토와 사례별 정답표 교정을 거쳤고, 바뀐 값은 모두 교정 로그(이전 값·새 값·근거 URL·사유)로 남겼습니다. 원문을 직접 열람한 사례는 '+N.raw_read_count+'건이며 나머지는 제목·요약 기준 분석입니다.'],
+       ['사업 이력','같은 사업이 계획→계약→실행→성과로 실제 진전된 경우만 사건 사이를 연결했습니다. 같은 IP의 서로 다른 활동은 따로 둡니다.']];
+@@ -99,5 +123,5 @@
+     <div class="subsection"><div class="subhead"><h3>분야 선택</h3><span class="subnote">분야를 누르면 그 분야의 통합 데이터와 기업 목록으로 이동합니다</span></div>
+-      <div class="sectorgrid">${D.sectors.map(s=>`<button class="sectorcard" data-sector="${escape(s.name)}"><strong>${escape(s.name)}</strong><span class="small">기업 ${s.companies} · IP ${s.ips} · IP 활용 자료 ${s.ip_use_rows}</span><span class="small muted">${escape(topOf(s.name))}</span></button>`).join('')}</div></div>
++      <div class="sectorgrid">${SECTORS.map(s=>`<button class="sectorcard" data-sector="${escape(s.name)}"><strong>${escape(s.name)}</strong><span class="small">기업 ${s.companies} · IP ${s.ips} · IP 활용 자료 ${s.ip_use_rows}</span><span class="small muted">${escape(topOf(s.name))}</span></button>`).join('')}</div></div>
+     <details class="guide"><summary>이 자료는 어떻게 만들었나 · 확인할 수 있는 것 · 사용법 · 유의점</summary>
+-    <div class="subsection"><div class="subhead"><h3>이 자료는 어떻게 만들었나</h3><span class="subnote">데이터 분석 기준일 ${escape(D.date)} · ${escape(D.version)}</span></div>
++    <div class="subsection"><div class="subhead"><h3>이 자료는 어떻게 만들었나</h3><span class="subnote">자료 기간 ${escape(RANGE.start)}~${escape(RANGE.end)} · 갱신 ${escape(UPDATED)} · ${escape(D.version)}</span></div>
+       <ol class="steps">${steps.map(([t,d])=>`<li><b>${escape(t)}</b><span>${escape(d)}</span></li>`).join('')}</ol></div>
+@@ -132,3 +156,3 @@
+     const MAIN=['IP 활용','해외 실행·성과','국제 계약·제휴','해외 계획·추진','협업','국내 도입','해외 법인·지분 처분'];
+-    const years=['2024','2025','2026'].map(y=>{const ye=evs.filter(e=>(e.date||'').startsWith(y));
++    const years=RANGE.years.map(y=>{const ye=evs.filter(e=>(e.date||'').startsWith(y));
+       const cnt=MAIN.map(k=>[k,uniqCount(ye.filter(e=>e.category===k))]).filter(x=>x[1]>0);
+@@ -138,3 +162,3 @@
+       const fqKeys=new Set(fq.map(f=>f.p)),fqBases=new Set(fq.map(f=>f.b||'미확인'));
+-      const qComplete=y==='2026' ? ['2026Q1','2026Q2'].every(q=>fqKeys.has(q)) : [1,2,3,4].every(q=>fqKeys.has(y+'Q'+q));
++      const qN=finQuarters(y),qComplete=qN>0&&Array.from({length:qN},(_,i)=>y+'Q'+(i+1)).every(q=>fqKeys.has(q));
+       let fin='';
+@@ -146,3 +170,3 @@
+           const rev=fq.reduce((s,f)=>s+(f.rev||0),0),op=fq.reduce((s,f)=>s+(f.op||0),0);
+-          const scope=qComplete?(y==='2026'?'상반기(1~2분기)':'연간(4개 분기)'):`확인된 ${fqKeys.size}개 분기 합계(연간 아님)`;
++          const scope=qComplete?finScope(qN):`확인된 ${fqKeys.size}개 분기 합계(연간 아님)`;
+           fin=`${y} ${scope} · ${basis} · 매출 ${fmt억(rev)} · 영업이익 ${fmt억(op)}`;
+@@ -164,3 +188,3 @@
+   const scopeIps=()=>{const cs=scopeCodes();return D.ips.filter(x=>cs.has(x.code));};
+-  const firstSector=code=>{const c=D.companies.find(x=>x.code===code);return c?c.sector:D.sectors[0].name;};
++  const firstSector=code=>{const c=D.companies.find(x=>x.code===code);return c?c.sector:SECTORS[0].name;};
+   function goCompany(code,rid){if(state.sector===ALL||!getSectorCompanies().some(x=>x.code===code))state.sector=firstSector(code);
+@@ -199,3 +223,3 @@
+   function renderAggregate(){const isAll=state.sector===ALL,ev=scopeEvents(),MAIN=['IP 활용','해외 실행·성과','국제 계약·제휴','해외 계획·추진','국내 도입','협업','거래 관계'];
+-    const rows=isAll?D.sectors.map(s=>{const cs=new Set(D.companies.filter(c=>c.sector===s.name).map(c=>c.code));const e=ev.filter(x=>cs.has(x.code));return {key:s.name,label:s.name,n:s.companies,e,codes:[...cs],btn:`data-sector="${escape(s.name)}"`};})
++    const rows=isAll?SECTORS.map(s=>{const cs=new Set(D.companies.filter(c=>c.sector===s.name).map(c=>c.code));const e=ev.filter(x=>cs.has(x.code));return {key:s.name,label:s.name,n:s.companies,e,codes:[...cs],btn:`data-sector="${escape(s.name)}"`};})
+       :getSectorCompanies().map(c=>{const e=ev.filter(x=>x.code===c.code);return {key:c.code,label:c.name,n:(ipCodes.get(c.code)||[]).length,e,codes:[c.code],btn:`data-company="${escape(c.code)}"`};}).sort((a,b)=>(subK(a.key)-subK(b.key))||uniqCount(b.e)-uniqCount(a.e));
+@@ -266,3 +290,3 @@
+   function timelineBlock(c){
+-    const S=Date.parse('2024-01-01'),E=Date.parse('2026-10-31'),pct=d=>Math.max(0,Math.min(100,(Date.parse(d)-S)/(E-S)*100));
++    const S=Date.parse(RANGE.start.slice(0,8)+'01'),E=Date.parse(new Date(Date.UTC(RANGE.y1,RANGE.m1,0)).toISOString().slice(0,10)),pct=d=>Math.max(0,Math.min(100,(Date.parse(d)-S)/(E-S)*100));
+     const seen=new Set(),evs=[];(evCodes.get(c.code)||[]).forEach(e=>{if(e.category==='검토 후보'||!e.date)return;const k=e.eid||e.cid;if(seen.has(k))return;seen.add(k);evs.push(e);});
+@@ -287,3 +311,3 @@
+     const [ma,ha]=lane(A,'');const [mb,hb]=lane([...Bd,...Bs.map(x=>({...x}))],'sq');
+-    const yrs=['2024-01-01','2024-07-01','2025-01-01','2025-07-01','2026-01-01','2026-07-01'].map(d=>`<span class="tlgrid2 ${d.endsWith('01-01')?'yr':''}" style="left:${pct(d)}%"><b>${d.endsWith('01-01')?d.slice(0,4):d.slice(0,4).slice(2)+'.7'}</b></span>`).join('');
++    const yrs=RANGE.years.flatMap(y=>RANGE.years.length>4?[y+'-01-01']:[y+'-01-01',y+'-07-01']).filter(d=>d>=RANGE.start.slice(0,8)+'01'&&d<=RANGE.end).map(d=>`<span class="tlgrid2 ${d.endsWith('01-01')?'yr':''}" style="left:${pct(d)}%"><b>${d.endsWith('01-01')?d.slice(0,4):d.slice(0,4).slice(2)+'.7'}</b></span>`).join('');
+     const legend=`${tops.map((n,i)=>`<button class="tllg" data-tlip="${escape(n)}"><i style="background:${TLPAL[i]}"></i>${escape(n)} ${cnt.get(n)}</button>`).join('')}${evs.some(e=>ipsOf(e).length&&!ipsOf(e).some(n=>tops.includes(n)))?`<span class="tllg0"><i style="background:${TLOTHER}"></i>그 밖의 IP</span>`:''}${evs.some(e=>!ipsOf(e).length)?`<span class="tllg0"><i style="background:${TLNOIP}"></i>특정 IP 없음</span>`:''}`;
+@@ -340,3 +364,3 @@
+   function bizBody(c,t){
+-    if(t==='실적'){const f=(D.fin[c.code]||[]).filter(x=>x.p>='2024Q1');if(!f.length)return '<div class="empty">분기 실적 자료가 없습니다.</div>';
++    if(t==='실적'){const f=(D.fin[c.code]||[]).filter(x=>x.p>=RANGE.q0);if(!f.length)return '<div class="empty">분기 실적 자료가 없습니다.</div>';
+       const mx=Math.max(...f.map(x=>Math.abs(x.rev||0)),1);
+@@ -347,8 +371,8 @@
+         return `<div class="sectionlabel">${escape(p)}</div><div class="tablewrap"><table class="aggtable"><thead><tr><th>사업부문·품목</th><th>매출</th><th>비중</th><th>전년비</th></tr></thead><tbody>${rows.slice(0,15).map(x=>`<tr><td>${escape(x.lab)}</td><td class="num">${fmt억(x.amt)}</td><td class="num">${x.sh==null?'':x.sh.toFixed(1)+'%'}</td><td class="num ${x.yoy<0?'neg':''}">${pct(x.yoy)}</td></tr>`).join('')}</tbody></table></div>`;}).join('');}
+-    if(t==='공시'){const s=(D.disc[c.code]||[]).slice().reverse();if(!s.length)return '<div class="empty">2024년 이후 주요 공시 자료가 없습니다.</div>';
++    if(t==='공시'){const s=(D.disc[c.code]||[]).slice().reverse();if(!s.length)return `<div class="empty">${RANGE.y0}년 이후 주요 공시 자료가 없습니다.</div>`;
+       const ks=[...new Set(s.map(x=>x.k))];
+-      return `<p class="hint">2024년 이후 DART 주요 공시(공급계약·인수합병·자금조달·지배구조·주주환원·위험·소송·종속회사 변동 등) ${s.length}건 · 최신순</p><div class="btnrow" style="margin-bottom:10px">${ks.map(k=>`<span class="pill">${escape(k)} ${s.filter(x=>x.k===k).length}</span>`).join('')}</div><ul class="tl">${s.map(x=>`<li><span class="meta">${escape(x.d)}</span> <span class="pill">${escape(x.k)}</span> ${x.u?`<a href="${escape(x.u)}" target="_blank" rel="noopener">${escape(x.t)}</a>`:escape(x.t)}${(x.x||[]).length?`<div class="meta discline">${escape(discLine(x))}</div>`:''}</li>`).join('')}</ul>`;}
+-    if(t==='전략 활동'){const s=(D.strat[c.code]||[]).slice().reverse();if(!s.length)return '<div class="empty">2024년 이후 전략 활동(V16) 분석 자료가 없습니다.</div>';
++      return `<p class="hint">${RANGE.y0}년 이후 DART 주요 공시(공급계약·인수합병·자금조달·지배구조·주주환원·위험·소송·종속회사 변동 등) ${s.length}건 · 최신순</p><div class="btnrow" style="margin-bottom:10px">${ks.map(k=>`<span class="pill">${escape(k)} ${s.filter(x=>x.k===k).length}</span>`).join('')}</div><ul class="tl">${s.map(x=>`<li><span class="meta">${escape(x.d)}</span> <span class="pill">${escape(x.k)}</span> ${x.u?`<a href="${escape(x.u)}" target="_blank" rel="noopener">${escape(x.t)}</a>`:escape(x.t)}${(x.x||[]).length?`<div class="meta discline">${escape(discLine(x))}</div>`:''}</li>`).join('')}</ul>`;}
++    if(t==='전략 활동'){const s=(D.strat[c.code]||[]).slice().reverse();if(!s.length)return `<div class="empty">${RANGE.y0}년 이후 전략 활동(V16) 분석 자료가 없습니다.</div>`;
+       const ks=[...new Set(s.map(x=>x.k))];
+-      return `<p class="hint">기사 기반 전략 활동 분석(V16, 2024년 이후 실행 확인분) ${s.length}건. ‘통상 운영’ 표시는 산업 변화 근거로 쓰지 않는 일상 운영입니다.</p><div class="btnrow" style="margin-bottom:10px">${ks.map(k=>`<span class="pill blue">${escape(k)} ${s.filter(x=>x.k===k).length}</span>`).join('')}</div><ul class="tl">${s.map(x=>`<li><span class="meta">${escape(x.d)}</span> <span class="pill blue">${escape(x.k)}</span> ${x.u?`<a href="${escape(x.u)}" target="_blank" rel="noopener">${escape(x.t)}</a>`:escape(x.t)}${x.rt?' <span class="meta">· 통상 운영</span>':''}</li>`).join('')}</ul>`;}
++      return `<p class="hint">기사 기반 전략 활동 분석(V16, ${RANGE.y0}년 이후 실행 확인분) ${s.length}건. ‘통상 운영’ 표시는 산업 변화 근거로 쓰지 않는 일상 운영입니다.</p><div class="btnrow" style="margin-bottom:10px">${ks.map(k=>`<span class="pill blue">${escape(k)} ${s.filter(x=>x.k===k).length}</span>`).join('')}</div><ul class="tl">${s.map(x=>`<li><span class="meta">${escape(x.d)}</span> <span class="pill blue">${escape(x.k)}</span> ${x.u?`<a href="${escape(x.u)}" target="_blank" rel="noopener">${escape(x.t)}</a>`:escape(x.t)}${x.rt?' <span class="meta">· 통상 운영</span>':''}</li>`).join('')}</ul>`;}
+     const ev=firmEvents().filter(e=>e.category!=='검토 후보');const seen=new Set();const items=[];
+@@ -357,3 +381,3 @@
+     for(const x of D.strat[c.code]||[])if(!x.rt)items.push({d:x.d,type:'전략 활동',k:x.k,t:x.t,u:x.u});
+-    for(const x of D.fin[c.code]||[])if(x.p>='2024Q1'&&x.flow)items.push({d:x.p.replace(/Q(\d)/,(m,q)=>'-'+String(q*3).padStart(2,'0')+'-말'),type:'실적',k:x.p,t:`매출 ${fmt억(x.rev)}(${pct(x.ry)}) · 영업이익 ${fmt억(x.op)} · ${x.flow}`});
++    for(const x of D.fin[c.code]||[])if(x.p>=RANGE.q0&&x.flow)items.push({d:x.p.replace(/Q(\d)/,(m,q)=>'-'+String(q*3).padStart(2,'0')+'-말'),type:'실적',k:x.p,t:`매출 ${fmt억(x.rev)}(${pct(x.ry)}) · 영업이익 ${fmt억(x.op)} · ${x.flow}`});
+     items.sort((a,b)=>b.d.localeCompare(a.d));
+@@ -405,10 +429,10 @@
+     if(!c&&['companyIpCsv','companyEventsCsv','selectedIpCsv'].includes(id)){alert('기업을 먼저 선택하세요. 전체 개요에서는 분야·전체 단위 CSV만 내려받을 수 있습니다.');return;}
+-    if(id==='downloadSectorCompany')csvDownload(`${sec}_기업개요_v34.csv`,getSectorCompanies(),companyCols);
+-    if(id==='sectorIpCsv')csvDownload(`${sec}_IP_v34.csv`,D.ips.filter(x=>codes().has(x.code)),ipCols);
+-    if(id==='sectorEventsCsv')csvDownload(`${sec}_활동_v34.csv`,D.events.filter(x=>codes().has(x.code)),eventCols);
+-    if(id==='companyIpCsv')csvDownload(`${sec}_${c.name}_IP_v34.csv`,firmIps(),ipCols);
+-    if(id==='companyEventsCsv')csvDownload(`${sec}_${c.name}_활동_v34.csv`,firmEvents(),eventCols);
+-    if(id==='selectedIpCsv'&&ip)csvDownload(`${sec}_${c.name}_${ip.name}_활동_v34.csv`,firmEvents().filter(x=>x.rid===ip.rid),eventCols);
++    if(id==='downloadSectorCompany')csvDownload(`${sec}_기업개요_${VER}.csv`,getSectorCompanies(),companyCols);
++    if(id==='sectorIpCsv')csvDownload(`${sec}_IP_${VER}.csv`,D.ips.filter(x=>codes().has(x.code)),ipCols);
++    if(id==='sectorEventsCsv')csvDownload(`${sec}_활동_${VER}.csv`,D.events.filter(x=>codes().has(x.code)),eventCols);
++    if(id==='companyIpCsv')csvDownload(`${sec}_${c.name}_IP_${VER}.csv`,firmIps(),ipCols);
++    if(id==='companyEventsCsv')csvDownload(`${sec}_${c.name}_활동_${VER}.csv`,firmEvents(),eventCols);
++    if(id==='selectedIpCsv'&&ip)csvDownload(`${sec}_${c.name}_${ip.name}_활동_${VER}.csv`,firmEvents().filter(x=>x.rid===ip.rid),eventCols);
+   }
+-  function renderDocs(){const names=['00_색인.md','01_v3.4_재검토반영보고.md','01_게임.md','02_음악.md','03_방송및영상.md','04_애니메이션.md','05_캐릭터.md','06_만화.md','07_지식정보.md','08_출판.md','09_영화.md','10_광고.md','11_콘텐츠솔루션.md'];byId('sourceDocs').innerHTML=names.map(n=>`<a href="./docs/${encodeURIComponent(n)}" download>${escape(n)}</a>`).join('');}
++  function renderDocs(){const names=Array.isArray(D.docs)&&D.docs.length?D.docs:['00_색인.md','01_v3.4_재검토반영보고.md','01_게임.md','02_음악.md','03_방송및영상.md','04_애니메이션.md','05_캐릭터.md','06_만화.md','07_지식정보.md','08_출판.md','09_영화.md','10_광고.md','11_콘텐츠솔루션.md'];byId('sourceDocs').innerHTML=names.map(n=>`<a href="./docs/${encodeURIComponent(n)}" download>${escape(n)}</a>`).join('');}
+   document.addEventListener('click',e=>{
+@@ -435,4 +459,4 @@
+     if(b.hasAttribute('data-aggipmore')){state.aggIpLimit+=36;renderAggIps();return;}
+-    if(b.id==='aggEventsCsv'){csvDownload(`${state.sector.replaceAll(' ','_')}_통합활동_v34.csv`,aggEventsFiltered(),eventCols);return;}
+-    if(b.id==='aggIpCsv'){csvDownload(`${state.sector.replaceAll(' ','_')}_통합IP_v34.csv`,aggIpsFiltered(),ipCols);return;}
++    if(b.id==='aggEventsCsv'){csvDownload(`${state.sector.replaceAll(' ','_')}_통합활동_${VER}.csv`,aggEventsFiltered(),eventCols);return;}
++    if(b.id==='aggIpCsv'){csvDownload(`${state.sector.replaceAll(' ','_')}_통합IP_${VER}.csv`,aggIpsFiltered(),ipCols);return;}
+     if(b.hasAttribute('data-ipgroup')){state.ipGroup=b.dataset.ipgroup;state.ipLimit=18;renderIpFilters();renderIps();return;}
+@@ -448,3 +472,9 @@
+   window.addEventListener('hashchange',()=>{const h=new URLSearchParams(location.hash.slice(1)),s=h.get('sector'),c=h.get('code')||'';const ns=sectorByName[s]?s:ALL;if(ns===state.sector&&c===state.code)return;state.sector=ns;state.code=ns===ALL?'':(D.companies.some(x=>x.sector===ns&&x.code===c)?c:'');resetIp();renderSector();});
+-  setupSelection();renderDocs();renderSector();
++  /* 머리글·바닥글의 기간·버전·분야 수도 데이터에서 */
++  function renderChrome(){document.title=`콘텐츠 상장사 IP·사업 현황 | ${D.version||''}`;
++    const set=(id,t)=>{const el=byId(id);if(el)el.textContent=t;};
++    set('dataPeriod',RANGE.y0===RANGE.y1?String(RANGE.y0):`${RANGE.y0}–${RANGE.y1}`);set('dataVersion','DATA '+(D.version||''));
++    set('sectorCountLabel',`전체 + ${SECTORS.length}개 분야`);
++    set('footerNote',`출처: 사용자 제공 「분야별정리_IP·글로벌·협업_2024-2026_v3.4」와 이후 갱신 자료 · 자료 기간 ${RANGE.start}~${RANGE.end} · 갱신 ${UPDATED} · 원자료 및 교정 로그는 다운로드 파일 참조`);}
++  renderChrome();setupSelection();renderDocs();renderSector();
+ })();
+diff --git a/build_portal.py b/build_portal.py
+index be1331c..d7a2ad1 100644
+--- a/build_portal.py
++++ b/build_portal.py
+@@ -212,3 +212,3 @@ def build(xlsx,mdzip):
+ 
+- data={'version':'v3.4','date':'2026-10-21','sectors':sectors,'companies':companies,
++ data={'version':'v3.4','date':'2026-10-21','updated':datetime.now().strftime('%Y-%m-%d'),'sectors':sectors,'companies':companies,
+        'ips':ips,'events':events,'history':[r for r in history if r.get('code6')],
+diff --git a/index.html b/index.html
+index 223c1d5..7e88f97 100644
+--- a/index.html
++++ b/index.html
+@@ -10,6 +10,6 @@
+  <div class="brand"><span class="brandmark">C / I</span><div><div class="brandtitle">콘텐츠 상장사 IP·사업 현황</div><div class="brandsub">분야별 기업 소개 · IP 권리 · 사업 활동</div></div></div>
+- <div class="topright"><span>2024–2026</span><span class="version">DATA v3.6.5</span><a class="toplink" href="#downloads">원자료 다운로드 ↗</a></div>
++ <div class="topright"><span id="dataPeriod"></span><span class="version" id="dataVersion"></span><a class="toplink" href="#downloads">원자료 다운로드 ↗</a></div>
+ </header>
+ <div class="layout">
+- <aside class="sidebar"><div class="sideheading">보기 선택 <span>전체 + 11개 분야</span></div><nav id="sectors" aria-label="분야 선택"></nav>
++ <aside class="sidebar"><div class="sideheading">보기 선택 <span id="sectorCountLabel"></span></div><nav id="sectors" aria-label="분야 선택"></nav>
+  <div class="sidefoot">분야는 기관 명부 기준이며, 여러 분야에 등재된 기업은 해당 분야에 중복 표시됩니다.</div></aside>
+@@ -32,3 +32,3 @@
+   </section>
+-  <footer>출처: 사용자 제공 「분야별정리_IP·글로벌·협업_2024-2026_v3.4」 · 데이터 분석 기준일 2026.10.21 · 원자료 및 교정 로그는 다운로드 파일 참조</footer>
++  <footer id="footerNote">출처: 사용자 제공 「분야별정리_IP·글로벌·협업_2024-2026_v3.4」 · 데이터 분석 기준일 2026.10.21 · 원자료 및 교정 로그는 다운로드 파일 참조</footer>
+  </main>

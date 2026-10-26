@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="color-scheme" content="light"><title>콘텐츠 상장사 IP·사업 현황 | v3.6.5</title>
+<link rel="stylesheet" href="./assets/style.css">
+</head>
+<body>
+<header class="topbar">
+ <div class="brand"><span class="brandmark">C / I</span><div><div class="brandtitle">콘텐츠 상장사 IP·사업 현황</div><div class="brandsub">분야별 기업 소개 · IP 권리 · 사업 활동</div></div></div>
+ <div class="topright"><span id="dataPeriod"></span><span class="version" id="dataVersion"></span><a class="toplink" href="#downloads">원자료 다운로드 ↗</a></div>
+</header>
+<div class="layout">
+ <aside class="sidebar"><div class="sideheading">보기 선택 <span id="sectorCountLabel"></span></div><nav id="sectors" aria-label="분야 선택"></nav>
+ <div class="sidefoot">분야는 기관 명부 기준이며, 여러 분야에 등재된 기업은 해당 분야에 중복 표시됩니다.</div></aside>
+ <main id="main" class="main">
+  <section class="hero"><div class="eyebrow" id="sectorLabel">분야별 기업 프로필</div><h1 id="sectorTitle">기업과 IP의 사업 구조</h1><p class="lead">기업마다 보유·활용 IP와 권리 관계, 해외 진출과 협업 사례를 정리했습니다. 여러 분야에 등재된 기업은 기업 화면에서 모든 분야의 활동을 함께 보여 줍니다.</p>
+   <div id="sectorStats" class="stats"></div>
+  </section>
+  <section id="overview" class="section overview" hidden></section>
+  <section id="aggregate" class="section aggregate"></section>
+  <section id="companySection" class="section"><div class="sectionhead"><div><div class="eyebrow" id="companyEyebrow">기업 선택</div><h2 id="companyHeading">기업 선택</h2><p class="hint">기업 카드를 누르면 기업 소개, 사업 활동, IP를 볼 수 있습니다.</p></div><button class="download outline" id="downloadSectorCompany">이 분야 기업 CSV ↓</button></div>
+   <div class="toolbar"><label class="searchwrap"><span class="sr-only">기업 검색</span><input id="companySearch" type="search" placeholder="기업명·IP명 검색"></label><span id="companyCount" class="count"></span></div><div id="companies" class="companygrid"></div>
+  </section>
+  <section id="profile" class="section profile"></section>
+  <section id="downloads" class="section downloadsection"><div class="sectionhead"><div><div class="eyebrow">05 · 원자료</div><h2>원자료 다운로드</h2><p class="hint">원본 전체와 현재 선택한 분야·기업 데이터를 각각 내려받을 수 있습니다.</p></div></div>
+   <div class="downloadgrid"><a class="dlcard" href="./downloads/v3.4_원본데이터.xlsx" download><strong>원본 엑셀</strong><span>v3.4 전체 26개 시트 · 원자료 그대로</span><small>Excel 파일 다운로드 ↗</small></a>
+    <a class="dlcard" href="./downloads/v3.4_rawdata_26시트_CSV.zip" download><strong>전체 원자료</strong><span>26개 시트 원래 열을 보존한 CSV 묶음</span><small>ZIP 다운로드 ↗</small></a>
+    <a class="dlcard" href="./downloads/v3.4.1_포털추가분석_7종CSV.zip" download><strong>추가 분석 데이터 CSV</strong><span>실적·매출 품목·공시·전략 활동·뉴스 상태·개체·기업 요약의 화면용 데이터 7종</span><small>CSV ZIP 다운로드 ↗</small></a>
+    <div class="dlcard"><strong>선택 범위 원자료</strong><span>분야 또는 기업 단위로 자료를 추출합니다.</span><div class="btnrow"><button id="sectorIpCsv" class="tinybtn">분야 IP CSV ↓</button><button id="sectorEventsCsv" class="tinybtn">분야 활동 CSV ↓</button><button id="companyIpCsv" class="tinybtn">기업 IP CSV ↓</button><button id="companyEventsCsv" class="tinybtn">기업 활동 CSV ↓</button></div></div>
+   </div><details class="sourceDetails"><summary>원본 분야별 분석 문서 및 데이터 처리 기준</summary><div id="sourceDocs" class="docs"></div><div class="method"><b>해석 유의사항</b><p>이 사이트는 업로드된 v3.4 엑셀을 재구성한 탐색 화면입니다. 원천 IP, 공동 보유, 외부 IP, 미확인을 구분하며 원본에 없는 권리·수익·실제 계약 체결은 추정하지 않습니다. 콘텐츠 활용 행위의 확인과 기사 본문 직접 열람 여부도 서로 다른 변수입니다.</p><p>IP와 사건은 동일 기업·동일 대표 IP의 정확한 이름 일치에서만 자동 연결합니다. 이름이 다른 사례는 기업 전체 활동 목록에 남깁니다. 사건은 여러 측면으로 중복 등장할 수 있으므로 화면 건수를 고유한 계약 수나 기업 실적으로 해석하면 안 됩니다.</p></div></details>
+  </section>
+  <footer id="footerNote">출처: 사용자 제공 「분야별정리_IP·글로벌·협업_2024-2026_v3.4」 · 데이터 분석 기준일 2026.10.21 · 원자료 및 교정 로그는 다운로드 파일 참조</footer>
+ </main>
+</div>
+<script src="./data.js"></script><script src="./assets/app.js"></script>
+</body></html>
